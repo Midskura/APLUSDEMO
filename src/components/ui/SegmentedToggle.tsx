@@ -13,6 +13,8 @@ interface SegmentedToggleProps<T extends string> {
   options: SegmentedToggleOption<T>[];
   className?: string;
   layoutIdPrefix?: string;
+  buttonPropsMap?: Partial<Record<T, React.ButtonHTMLAttributes<HTMLButtonElement>>>;
+  containerProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 
 export function SegmentedToggle<T extends string>({ 
@@ -20,18 +22,24 @@ export function SegmentedToggle<T extends string>({
   onChange, 
   options, 
   className, 
-  layoutIdPrefix = "toggle-pill" 
+  layoutIdPrefix = "toggle-pill",
+  buttonPropsMap,
+  containerProps,
 }: SegmentedToggleProps<T>) {
+  const combinedClassName = [containerProps?.className, className].filter(Boolean).join(" ");
+
   return (
     <div 
-      className={className}
+      {...containerProps}
+      className={combinedClassName || undefined}
       style={{ 
         display: "inline-flex",
         border: "1px solid #E5E9F0", // var(--neuron-ui-border)
         borderRadius: "10px",
         padding: "4px",
         backgroundColor: "white",
-        width: "fit-content"
+        width: "fit-content",
+        ...containerProps?.style,
       }}
     >
       {options.map((option) => {
@@ -58,6 +66,7 @@ export function SegmentedToggle<T extends string>({
               alignItems: "center",
               gap: "8px"
             }}
+            {...buttonPropsMap?.[option.value]}
           >
             {isActive && (
               <motion.div

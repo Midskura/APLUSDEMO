@@ -79,12 +79,64 @@ const TABS: { id: FinancialsTab; label: string; icon: typeof Layout }[] = [
 
 // ── Component ──
 
-export function FinancialsModule() {
-  const [activeTab, setActiveTab] = useState<FinancialsTab>("dashboard");
+interface FinancialsModuleProps {
+  demoMode?: boolean;
+  injectedInvoices?: any[];
+  initialTab?: FinancialsTab;
+  initialScopePreset?: DateScope["preset"];
+  onActiveTabChange?: (tab: FinancialsTab) => void;
+  onScopeChangeExternal?: (scope: DateScope) => void;
+  demoInvoiceSpotlight?: {
+    eyebrow?: string;
+    title?: string;
+    description?: string;
+    invoiceNumber?: string;
+    customerName?: string;
+    bookingId?: string;
+    amount?: number;
+    balance?: number;
+  };
+  demoTargetIds?: {
+    invoicesTab?: string;
+    scopePreset?: string;
+    invoiceRow?: string;
+    totalInvoicedCard?: string;
+  };
+}
+
+export function FinancialsModule({
+  demoMode = false,
+  injectedInvoices = [],
+  initialTab = "dashboard",
+  initialScopePreset = "this-month",
+  onActiveTabChange,
+  onScopeChangeExternal,
+  demoInvoiceSpotlight,
+  demoTargetIds,
+}: FinancialsModuleProps = {}) {
+  const [activeTab, setActiveTab] = useState<FinancialsTab>(initialTab);
   const navigate = useNavigate();
 
   // Aggregate scope state (shared across tabs — Phase 1: billings only)
-  const [scope, setScope] = useState<DateScope>(() => createDateScope("this-month"));
+  const [scope, setScope] = useState<DateScope>(() => createDateScope(initialScopePreset));
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    setScope(createDateScope(initialScopePreset));
+  }, [initialScopePreset]);
+
+  const handleActiveTabChange = useCallback((tab: FinancialsTab) => {
+    setActiveTab(tab);
+    onActiveTabChange?.(tab);
+  }, [onActiveTabChange]);
+
+  const handleScopeChange = useCallback((nextScope: DateScope) => {
+    setScope(nextScope);
+    onScopeChangeExternal?.(nextScope);
+  }, [onScopeChangeExternal]);
 
   /** Detect which tab to deep-link into based on record shape */
   const detectTargetTab = useCallback((item: any): string => {
@@ -143,9 +195,30 @@ export function FinancialsModule() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<OperationsExpense[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!demoMode);
+  const mergedInvoices = useMemo(() => {
+    const baseInvoices = demoMode ? [] : invoices;
+    if (!injectedInvoices.length) return baseInvoices;
+    const seen = new Set<string>();
+    return [...injectedInvoices, ...baseInvoices].filter((invoice) => {
+      const key = invoice.id || invoice.invoice_number;
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [demoMode, injectedInvoices, invoices]);
 
   const fetchAll = useCallback(async (retryCount = 0) => {
+    if (demoMode) {
+      setBillingItems([]);
+      setInvoices([]);
+      setCollections([]);
+      setExpenses([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
 
@@ -209,7 +282,7 @@ export function FinancialsModule() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [demoMode]);
 
   // Fetch data on mount (orphan cleanup removed — was server-side only)
   useEffect(() => {
@@ -220,7 +293,7 @@ export function FinancialsModule() {
 
   // Scope-filtered financials for Dashboard (Phase 5)
   const scopedFinancials: FinancialData = useMemo(() => {
-    const sInvoices = invoices.filter((inv: any) => isInScope(inv.invoice_date || inv.created_at, scope));
+    const sInvoices = mergedInvoices.filter((inv: any) => isInScope(inv.invoice_date || inv.created_at, scope));
     const sBillings = billingItems.filter((b: any) => isInScope(b.created_at, scope));
     const sCollections = collections.filter((c: any) => isInScope(c.collection_date || c.created_at, scope));
     const sExpenses = expenses.filter((e: any) => isInScope((e as any).expenseDate || (e as any).createdAt, scope));
@@ -233,7 +306,7 @@ export function FinancialsModule() {
       refresh: fetchAll,
       totals: calculateFinancialTotals(sInvoices, sBillings, sExpenses as any[], sCollections),
     };
-  }, [invoices, billingItems, collections, expenses, isLoading, fetchAll, scope]);
+  }, [mergedInvoices, billingItems, collections, expenses, isLoading, fetchAll, scope]);
 
   // Billing items typed as BillingItem[]
   const typedBillingItems: BillingItem[] = useMemo(() => billingItems, [billingItems]);
@@ -434,10 +507,10 @@ export function FinancialsModule() {
 
   // Scope-filtered invoices
   const scopedInvoices = useMemo(() => {
-    return invoices.filter((inv: any) =>
+    return mergedInvoices.filter((inv: any) =>
       isInScope(inv.invoice_date || inv.created_at, scope)
     );
-  }, [invoices, scope]);
+  }, [mergedInvoices, scope]);
 
   // Aging bucket helper
   const getAgingDays = (inv: any): number => {
@@ -1161,10 +1234,12 @@ export function FinancialsModule() {
               System-wide view of billings, invoices, collections, and expenses.
             </p>
           </div>
-          <NeuronRefreshButton
-            onRefresh={fetchAll}
-            label="Refresh financials"
-          />
+          {!demoMode && (
+            <NeuronRefreshButton
+              onRefresh={fetchAll}
+              label="Refresh financials"
+            />
+          )}
         </div>
 
         {/* Tab Bar */}
@@ -1175,7 +1250,8 @@ export function FinancialsModule() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleActiveTabChange(tab.id)}
+                data-demo-target={tab.id === "invoices" ? demoTargetIds?.invoicesTab : undefined}
                 className="relative flex items-center gap-2 px-5 py-3 text-[13px] font-medium transition-colors"
                 style={{
                   color: isActive ? "#0F766E" : "#667085",
@@ -1200,27 +1276,31 @@ export function FinancialsModule() {
         {activeTab === "dashboard" && (
           <FinancialDashboard
             billingItems={billingItems}
-            invoices={invoices}
+            invoices={mergedInvoices}
             collections={collections}
             expenses={expenses as any[]}
             scope={scope}
-            onScopeChange={setScope}
+            onScopeChange={handleScopeChange}
             isLoading={isLoading}
-            onNavigateTab={(tab) => setActiveTab(tab)}
+            onNavigateTab={(tab) => handleActiveTabChange(tab)}
           />
         )}
 
         {activeTab === "billings" && (
           <AggregateFinancialShell
             scope={scope}
-            onScopeChange={setScope}
+            onScopeChange={handleScopeChange}
             kpiCards={billingsKPIs}
             isLoading={isLoading}
             hideScopeBar
           >
             <GroupingToolbar
               scope={scope}
-              onScopeChange={setScope}
+              onScopeChange={handleScopeChange}
+              scopeButtonProps={{
+                "data-demo-target": demoTargetIds?.scopePreset,
+                "data-demo-interaction-group": demoTargetIds?.scopePreset,
+              }}
               groupByOptions={BILLINGS_GROUP_OPTIONS}
               groupBy={billingsGroupBy}
               onGroupByChange={setBillingsGroupBy}
@@ -1246,51 +1326,120 @@ export function FinancialsModule() {
         )}
 
         {activeTab === "invoices" && (
-          <AggregateFinancialShell
-            scope={scope}
-            onScopeChange={setScope}
-            kpiCards={invoicesKPIs}
-            isLoading={isLoading}
-            hideScopeBar
-          >
-            <GroupingToolbar
+          <div className="flex flex-col gap-5">
+            {demoInvoiceSpotlight && (
+              <section
+                className="rounded-[24px] border px-6 py-6"
+                style={{
+                  borderColor: "#CFE4DB",
+                  background: "linear-gradient(135deg, #F4FBF8 0%, #FFFFFF 70%)",
+                  boxShadow: "0 20px 48px rgba(18,51,43,0.08)",
+                }}
+              >
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-[620px]">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0F766E]">
+                      {demoInvoiceSpotlight.eyebrow || "Financial Handoff"}
+                    </div>
+                    <h3 className="mt-2 text-[28px] font-semibold leading-[1.08] tracking-[-0.04em] text-[#12332B]">
+                      {demoInvoiceSpotlight.title || "This completed shipment is now a live invoice."}
+                    </h3>
+                    <p className="mt-3 text-[14px] leading-7 text-[#667085]">
+                      {demoInvoiceSpotlight.description || "Finance uses this screen to track billed value, outstanding balance, and what needs to be collected next."}
+                    </p>
+
+                    <div className="mt-5 flex flex-wrap gap-3 text-[12px]">
+                      {demoInvoiceSpotlight.invoiceNumber && (
+                        <div className="rounded-full border px-3 py-1.5 font-semibold text-[#12332B]" style={{ borderColor: "#D9E3E0", backgroundColor: "#FFFFFF" }}>
+                          Invoice {demoInvoiceSpotlight.invoiceNumber}
+                        </div>
+                      )}
+                      {demoInvoiceSpotlight.bookingId && (
+                        <div className="rounded-full border px-3 py-1.5 font-semibold text-[#12332B]" style={{ borderColor: "#D9E3E0", backgroundColor: "#FFFFFF" }}>
+                          Booking {demoInvoiceSpotlight.bookingId}
+                        </div>
+                      )}
+                      {demoInvoiceSpotlight.customerName && (
+                        <div className="rounded-full border px-3 py-1.5 font-semibold text-[#12332B]" style={{ borderColor: "#D9E3E0", backgroundColor: "#FFFFFF" }}>
+                          Customer {demoInvoiceSpotlight.customerName}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="min-w-[240px] rounded-[22px] border bg-white px-5 py-5" style={{ borderColor: "#D9E3E0" }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#667085]">Outstanding Amount</div>
+                    <div className="mt-2 text-[32px] font-semibold tracking-[-0.05em] text-[#12332B]">
+                      {formatCurrencyFull(Number(demoInvoiceSpotlight.balance ?? demoInvoiceSpotlight.amount ?? 0))}
+                    </div>
+                    <p className="mt-2 text-[12px] leading-6 text-[#667085]">
+                      This receivable is now owned by Finance for aging and collection follow-through.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <AggregateFinancialShell
               scope={scope}
-              onScopeChange={setScope}
-              groupByOptions={INVOICES_GROUP_OPTIONS}
-              groupBy={invoicesGroupBy}
-              onGroupByChange={setInvoicesGroupBy}
-              searchQuery={invoicesSearch}
-              onSearchChange={setInvoicesSearch}
-              statusOptions={INVOICES_STATUS_OPTIONS}
-              activeStatus={invoicesStatusFilter}
-              onStatusChange={setInvoicesStatusFilter}
-              totalCount={filteredInvoices.length}
-              groupCount={invoicesGroups.length}
-              agingBuckets={invoicesAgingBuckets}
-              activeAgingBucket={invoicesAgingBucket}
-              onAgingBucketChange={setInvoicesAgingBucket}
-            />
-            <GroupedDataTable<any>
-              groups={invoicesGroups}
-              columns={INVOICES_COLUMNS}
+              onScopeChange={handleScopeChange}
+              kpiCards={invoicesKPIs}
+              kpiCardTargetIds={{
+                "Total Invoiced": demoTargetIds?.totalInvoicedCard,
+              }}
               isLoading={isLoading}
-              onRowClick={handleRowClick}
-              exportFileName="invoices"
-            />
-          </AggregateFinancialShell>
+              hideScopeBar
+            >
+              <GroupingToolbar
+                scope={scope}
+                onScopeChange={handleScopeChange}
+                scopeButtonProps={{
+                  "data-demo-target": demoTargetIds?.scopePreset,
+                  "data-demo-interaction-group": demoTargetIds?.scopePreset,
+                }}
+                groupByOptions={INVOICES_GROUP_OPTIONS}
+                groupBy={invoicesGroupBy}
+                onGroupByChange={setInvoicesGroupBy}
+                searchQuery={invoicesSearch}
+                onSearchChange={setInvoicesSearch}
+                statusOptions={INVOICES_STATUS_OPTIONS}
+                activeStatus={invoicesStatusFilter}
+                onStatusChange={setInvoicesStatusFilter}
+                totalCount={filteredInvoices.length}
+                groupCount={invoicesGroups.length}
+                agingBuckets={invoicesAgingBuckets}
+                activeAgingBucket={invoicesAgingBucket}
+                onAgingBucketChange={setInvoicesAgingBucket}
+              />
+              <GroupedDataTable<any>
+                groups={invoicesGroups}
+                columns={INVOICES_COLUMNS}
+                isLoading={isLoading}
+                onRowClick={demoMode ? undefined : handleRowClick}
+                getRowId={(inv) => inv.id || inv.invoice_number}
+                highlightedRowId={injectedInvoices[0]?.id || injectedInvoices[0]?.invoice_number || null}
+                rowTargetId={demoTargetIds?.invoiceRow}
+                exportFileName="invoices"
+              />
+            </AggregateFinancialShell>
+          </div>
         )}
 
         {activeTab === "collections" && (
           <AggregateFinancialShell
             scope={scope}
-            onScopeChange={setScope}
+            onScopeChange={handleScopeChange}
             kpiCards={collectionsKPIs}
             isLoading={isLoading}
             hideScopeBar
           >
             <GroupingToolbar
               scope={scope}
-              onScopeChange={setScope}
+              onScopeChange={handleScopeChange}
+              scopeButtonProps={{
+                "data-demo-target": demoTargetIds?.scopePreset,
+                "data-demo-interaction-group": demoTargetIds?.scopePreset,
+              }}
               groupByOptions={COLLECTIONS_GROUP_OPTIONS}
               groupBy={collectionsGroupBy}
               onGroupByChange={setCollectionsGroupBy}
@@ -1315,14 +1464,18 @@ export function FinancialsModule() {
         {activeTab === "expenses" && (
           <AggregateFinancialShell
             scope={scope}
-            onScopeChange={setScope}
+            onScopeChange={handleScopeChange}
             kpiCards={expensesKPIs}
             isLoading={isLoading}
             hideScopeBar
           >
             <GroupingToolbar
               scope={scope}
-              onScopeChange={setScope}
+              onScopeChange={handleScopeChange}
+              scopeButtonProps={{
+                "data-demo-target": demoTargetIds?.scopePreset,
+                "data-demo-interaction-group": demoTargetIds?.scopePreset,
+              }}
               groupByOptions={EXPENSES_GROUP_OPTIONS}
               groupBy={expensesGroupBy}
               onGroupByChange={setExpensesGroupBy}

@@ -10,9 +10,10 @@ import type { KPICard } from "./types";
 interface KPIStripProps {
   cards: KPICard[];
   isLoading?: boolean;
+  cardTargetIds?: Record<string, string | undefined>;
 }
 
-export function KPIStrip({ cards, isLoading }: KPIStripProps) {
+export function KPIStrip({ cards, isLoading, cardTargetIds }: KPIStripProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-4 gap-4">
@@ -43,14 +44,19 @@ export function KPIStrip({ cards, isLoading }: KPIStripProps) {
   return (
     <div className="grid grid-cols-4 gap-4">
       {cards.map((card, idx) => (
-        <NeuronKPICard
+        <div
           key={idx}
-          icon={card.icon}
-          label={card.label}
-          value={card.value}
-          detail={card.subtext}
-          severity={card.severity}
-        />
+          data-demo-target={cardTargetIds?.[card.label]}
+          data-demo-highlight-target={cardTargetIds?.[card.label]}
+        >
+          <NeuronKPICard
+            icon={card.icon}
+            label={card.label}
+            value={card.value}
+            detail={card.subtext}
+            severity={card.severity}
+          />
+        </div>
       ))}
     </div>
   );

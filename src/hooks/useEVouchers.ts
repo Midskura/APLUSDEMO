@@ -24,7 +24,7 @@ export function useEVouchers(view: EVoucherView, userId?: string) {
     if (view === "pending") {
       query = query.in('status', ['pending', 'Pending']);
     } else if (view === "my-evouchers" && userId) {
-      query = query.eq('requestor_id', userId);
+      query = query.eq('created_by', userId);
     } else if (view === "my-evouchers" && !userId) {
       return [];
     }

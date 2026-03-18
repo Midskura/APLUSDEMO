@@ -1,25 +1,22 @@
-// CatalogManagementPage — Admin page for managing the Expense & Charge Catalog (Item Master)
-// Lives under Accounting Department → Admin → Item Catalog
-
-import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Pencil, X, Check, RotateCcw, ChevronDown, Database } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Database, Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
 import { supabase } from "../../utils/supabase/client";
 import { toast } from "../ui/toast-utils";
 
-// ==================== TYPES ====================
+type ServiceType = "Brokerage" | "Trucking" | "Forwarding" | "Marine Insurance" | "Others";
 
-interface CatalogItem {
+interface CatalogItemRow {
   id: string;
   name: string;
-  type: "expense" | "charge" | "both";
-  category: string;
+  description: string | null;
+  category_id: string | null;
   service_types: string[];
-  default_currency: string;
-  default_amount: number | null;
-  is_taxable: boolean;
+  default_price: number;
+  currency: string;
+  unit_type: string | null;
+  tax_code: string | null;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  sort_order: number;
 }
 
 interface CatalogCategory {
@@ -27,558 +24,429 @@ interface CatalogCategory {
   name: string;
 }
 
-// ==================== COMPONENT ====================
+interface CatalogFormState {
+  name: string;
+  description: string;
+  category_id: string;
+  service_types: string[];
+  default_price: string;
+  currency: string;
+  unit_type: string;
+  tax_code: string;
+}
+
+const SERVICE_TYPES: ServiceType[] = ["Brokerage", "Trucking", "Forwarding", "Marine Insurance", "Others"];
+const UNIT_OPTIONS = [
+  { value: "flat_fee", label: "Flat Fee" },
+  { value: "per_shipment", label: "Per Shipment" },
+  { value: "per_container", label: "Per Container" },
+  { value: "per_cbm", label: "Per CBM" },
+  { value: "per_kg", label: "Per KG" },
+  { value: "per_bl", label: "Per B/L" },
+  { value: "per_set", label: "Per Set" },
+];
+const TAX_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "VAT", label: "VAT" },
+  { value: "NVAT", label: "NVAT" },
+  { value: "ZR", label: "ZR" },
+];
+
+const panelStyle = {
+  backgroundColor: "white",
+  border: "1px solid #E0E6E4",
+  borderRadius: "8px",
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "8px 10px",
+  fontSize: "13px",
+  border: "1px solid #D0D5DD",
+  borderRadius: "6px",
+  color: "#2C3E38",
+  outline: "none",
+  backgroundColor: "white",
+};
+
+const labelStyle = {
+  display: "block",
+  marginBottom: "4px",
+  fontSize: "11px",
+  color: "#667085",
+};
+
+function createEmptyForm(): CatalogFormState {
+  return {
+    name: "",
+    description: "",
+    category_id: "",
+    service_types: [],
+    default_price: "0",
+    currency: "PHP",
+    unit_type: "flat_fee",
+    tax_code: "VAT",
+  };
+}
+
+function normalizeItem(row: any): CatalogItemRow {
+  return {
+    id: String(row.id),
+    name: row.name ?? "",
+    description: row.description ?? null,
+    category_id: row.category_id ?? null,
+    service_types: Array.isArray(row.service_types) ? row.service_types.filter(Boolean) : [],
+    default_price: Number(row.default_price ?? 0),
+    currency: row.currency ?? "PHP",
+    unit_type: row.unit_type ?? null,
+    tax_code: row.tax_code ?? null,
+    is_active: Boolean(row.is_active),
+    sort_order: Number(row.sort_order ?? 0),
+  };
+}
+
+function toForm(item: CatalogItemRow): CatalogFormState {
+  return {
+    name: item.name,
+    description: item.description ?? "",
+    category_id: item.category_id ?? "",
+    service_types: [...item.service_types],
+    default_price: String(item.default_price),
+    currency: item.currency || "PHP",
+    unit_type: item.unit_type || "flat_fee",
+    tax_code: item.tax_code || "",
+  };
+}
+
+function buildPayload(form: CatalogFormState) {
+  return {
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    category_id: form.category_id || null,
+    service_types: form.service_types,
+    default_price: Number(form.default_price || 0),
+    currency: form.currency || "PHP",
+    unit_type: form.unit_type || null,
+    tax_code: form.tax_code || null,
+  };
+}
+
+function toggleServiceType(current: string[], serviceType: string) {
+  return current.includes(serviceType)
+    ? current.filter((value) => value !== serviceType)
+    : [...current, serviceType];
+}
+
+function formatUnitType(unitType: string | null) {
+  return UNIT_OPTIONS.find((option) => option.value === unitType)?.label || "Custom";
+}
+
+function formatPrice(amount: number, currency: string) {
+  return `${currency} ${new Intl.NumberFormat("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)}`;
+}
 
 export function CatalogManagementPage() {
-  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [items, setItems] = useState<CatalogItemRow[]>([]);
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSeeding, setIsSeeding] = useState(false);
-
-  // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<string>("all");
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [filterServiceType, setFilterServiceType] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("active");
-
-  // Editing
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterServiceType, setFilterServiceType] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("active");
+  const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<CatalogItem>>({});
+  const [form, setForm] = useState<CatalogFormState>(createEmptyForm());
 
-  // Add new
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addForm, setAddForm] = useState<Partial<CatalogItem>>({
-    name: "",
-    type: "expense",
-    category: "",
-    service_types: [],
-    default_currency: "PHP",
-    is_taxable: false,
-  });
+  const categoryById = useMemo(
+    () => Object.fromEntries(categories.map((category) => [category.id, category.name])),
+    [categories]
+  );
 
-  // ==================== DATA FETCHING ====================
-
-  const fetchItems = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      let query = supabase.from('catalog_items').select('*');
-      if (filterStatus !== "all") {
-        query = query.eq('is_active', true);
+      const [{ data: itemRows, error: itemsError }, { data: categoryRows, error: categoriesError }] = await Promise.all([
+        supabase.from("catalog_items").select("*").order("sort_order", { ascending: true }).order("name", { ascending: true }),
+        supabase.from("catalog_categories").select("id, name").order("sort_order", { ascending: true }).order("name", { ascending: true }),
+      ]);
+
+      if (itemsError) {
+        toast.error(itemsError.message || "Error fetching catalog items");
+        return;
       }
-      const { data, error } = await query;
-      if (!error) setItems(data || []);
-    } catch (err) {
-      console.error("Error fetching catalog items:", err);
-    }
-  }, [filterStatus]);
 
-  const fetchCategories = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('catalog_categories').select('*');
-      if (!error) setCategories(data || []);
+      if (categoriesError) {
+        toast.error(categoriesError.message || "Error fetching categories");
+        return;
+      }
+
+      setItems((itemRows || []).map(normalizeItem));
+      setCategories((categoryRows || []).map((category: any) => ({ id: String(category.id), name: category.name ?? "" })));
     } catch (err) {
-      console.error("Error fetching categories:", err);
+      console.error("Error fetching catalog data:", err);
+      toast.error("Error fetching catalog data");
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    setIsLoading(true);
-    Promise.all([fetchItems(), fetchCategories()]).finally(() => setIsLoading(false));
-  }, [fetchItems, fetchCategories]);
+    fetchData();
+  }, [fetchData]);
 
-  // ==================== ACTIONS ====================
+  const filteredItems = useMemo(() => {
+    return items
+      .filter((item) => {
+        if (filterStatus === "active" && !item.is_active) return false;
+        if (filterStatus === "inactive" && item.is_active) return false;
+        if (filterCategory !== "all" && item.category_id !== filterCategory) return false;
+        if (filterServiceType !== "all" && !item.service_types.includes(filterServiceType)) return false;
+
+        if (searchQuery.trim()) {
+          const query = searchQuery.trim().toLowerCase();
+          const categoryName = categoryById[item.category_id || ""]?.toLowerCase() || "";
+          return (
+            item.name.toLowerCase().includes(query) ||
+            (item.description || "").toLowerCase().includes(query) ||
+            categoryName.includes(query)
+          );
+        }
+
+        return true;
+      })
+      .sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name));
+  }, [items, filterCategory, filterServiceType, filterStatus, searchQuery, categoryById]);
+
+  const openAddForm = () => {
+    setFormMode("add");
+    setEditingId(null);
+    setForm(createEmptyForm());
+  };
+
+  const openEditForm = (item: CatalogItemRow) => {
+    setFormMode("edit");
+    setEditingId(item.id);
+    setForm(toForm(item));
+  };
+
+  const closeForm = () => {
+    setFormMode(null);
+    setEditingId(null);
+    setForm(createEmptyForm());
+  };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+
+    try {
+      if (formMode === "add") {
+        const { error } = await supabase.from("catalog_items").insert({
+          id: `ci-${Date.now()}`,
+          ...buildPayload(form),
+          is_active: true,
+          sort_order: items.length + 1,
+        });
+        if (error) {
+          toast.error(error.message || "Error creating item");
+          return;
+        }
+        toast.success(`Created "${form.name.trim()}"`);
+      } else if (formMode === "edit" && editingId) {
+        const { error } = await supabase.from("catalog_items").update(buildPayload(form)).eq("id", editingId);
+        if (error) {
+          toast.error(error.message || "Error updating item");
+          return;
+        }
+        toast.success("Item updated");
+      }
+
+      closeForm();
+      await fetchData();
+    } catch (err) {
+      console.error("Error saving catalog item:", err);
+      toast.error("Error saving catalog item");
+    }
+  };
+
+  const setItemActiveState = async (id: string, isActive: boolean) => {
+    const { error } = await supabase.from("catalog_items").update({ is_active: isActive }).eq("id", id);
+    if (error) {
+      toast.error(error.message || `Error ${isActive ? "reactivating" : "deactivating"} item`);
+      return;
+    }
+    toast.success(isActive ? "Item reactivated" : "Item deactivated");
+    await fetchData();
+  };
 
   const handleSeed = async () => {
     setIsSeeding(true);
     try {
-      // Seed is a complex operation — for now, just show a message
       toast.success("Catalog seeding should be done via SQL migrations or Supabase dashboard.");
-    } catch (err) {
-      toast.error("Error seeding catalog");
-      console.error(err);
     } finally {
       setIsSeeding(false);
     }
   };
 
-  const handleSave = async (id: string) => {
-    try {
-      const updates = { ...editForm };
-      const { error } = await supabase
-        .from('catalog_items')
-        .update(updates)
-        .eq('id', id);
-      if (!error) {
-        toast.success("Item updated");
-        setEditingId(null);
-        fetchItems();
-        fetchCategories();
-      } else {
-        toast.error(error.message || "Error updating item");
-      }
-    } catch (err) {
-      toast.error("Error updating item");
-      console.error(err);
-    }
-  };
-
-  const handleDeactivate = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('catalog_items')
-        .update({ is_active: false })
-        .eq('id', id);
-      if (!error) {
-        toast.success("Item deactivated");
-        fetchItems();
-      }
-    } catch (err) {
-      toast.error("Error deactivating item");
-      console.error(err);
-    }
-  };
-
-  const handleReactivate = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('catalog_items')
-        .update({ is_active: true })
-        .eq('id', id);
-      if (!error) {
-        toast.success("Item reactivated");
-        fetchItems();
-      }
-    } catch (err) {
-      toast.error("Error reactivating item");
-      console.error(err);
-    }
-  };
-
-  const handleAdd = async () => {
-    if (!addForm.name?.trim()) {
-      toast.error("Name is required");
-      return;
-    }
-    try {
-      const newItem = { ...addForm, id: `CAT-${Date.now()}` };
-      const { error } = await supabase
-        .from('catalog_items')
-        .insert(newItem);
-      if (!error) {
-        toast.success(`Created "${addForm.name}"`);
-        setShowAddForm(false);
-        setAddForm({ name: "", type: "expense", category: "", service_types: [], default_currency: "PHP", is_taxable: false });
-        fetchItems();
-        fetchCategories();
-      } else {
-        toast.error(error.message || "Error creating item");
-      }
-    } catch (err) {
-      toast.error("Error creating item");
-      console.error(err);
-    }
-  };
-
-  // ==================== FILTERING ====================
-
-  const uniqueCategories = [...new Set(items.map((i) => i.category).filter(Boolean))].sort();
-  const allServiceTypes = ["Brokerage", "Trucking", "Forwarding", "Marine Insurance", "Others"];
-
-  const filtered = items.filter((item) => {
-    if (filterStatus === "active" && !item.is_active) return false;
-    if (filterStatus === "inactive" && item.is_active) return false;
-    if (filterType !== "all" && item.type !== filterType) return false;
-    if (filterCategory !== "all" && item.category !== filterCategory) return false;
-    if (filterServiceType !== "all" && !item.service_types?.includes(filterServiceType)) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return item.name.toLowerCase().includes(q) || item.category?.toLowerCase().includes(q);
-    }
-    return true;
-  }).sort((a, b) => a.name.localeCompare(b.name));
-
-  // ==================== HELPERS ====================
-
-  const typeBadge = (type: string) => {
-    const colors: Record<string, { bg: string; text: string }> = {
-      expense: { bg: "#FEF3C7", text: "#92400E" },
-      charge: { bg: "#DBEAFE", text: "#1E40AF" },
-      both: { bg: "#E0E7FF", text: "#4338CA" },
-    };
-    const c = colors[type] || colors.expense;
-    return (
-      <span style={{
-        padding: "2px 8px",
-        borderRadius: "10px",
-        fontSize: "11px",
-        fontWeight: 500,
-        backgroundColor: c.bg,
-        color: c.text,
-        textTransform: "capitalize",
-      }}>
-        {type}
-      </span>
-    );
-  };
-
-  const serviceTag = (s: string) => (
-    <span
-      key={s}
-      style={{
-        padding: "1px 6px",
-        borderRadius: "4px",
-        fontSize: "10px",
-        fontWeight: 500,
-        backgroundColor: "#F0FDFA",
-        color: "#0F766E",
-        border: "1px solid #CCFBF1",
-      }}
-    >
-      {s}
-    </span>
-  );
-
-  // ==================== RENDER ====================
-
   return (
     <div style={{ padding: "24px 32px", background: "var(--neuron-bg-page, #F8FAF9)", minHeight: "100%" }}>
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
         <div>
-          <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#12332B", marginBottom: "4px" }}>
-            Expense & Charge Catalog
-          </h1>
-          <p style={{ fontSize: "13px", color: "#667085" }}>
-            Manage standard financial line items used across bookings.
-          </p>
+          <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#12332B", marginBottom: "4px" }}>Expense & Charge Catalog</h1>
+          <p style={{ fontSize: "13px", color: "#667085" }}>Manage standard financial line items used across bookings.</p>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            onClick={handleSeed}
-            disabled={isSeeding}
-            style={{
-              padding: "8px 14px",
-              fontSize: "13px",
-              fontWeight: 500,
-              borderRadius: "8px",
-              border: "1px solid #E0E6E4",
-              backgroundColor: "white",
-              color: "#667085",
-              cursor: isSeeding ? "not-allowed" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
+          <button onClick={handleSeed} disabled={isSeeding} style={{ ...inputStyle, width: "auto", cursor: isSeeding ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
             <Database size={14} />
             {isSeeding ? "Seeding..." : "Seed Defaults"}
           </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            style={{
-              padding: "8px 14px",
-              fontSize: "13px",
-              fontWeight: 500,
-              borderRadius: "8px",
-              border: "none",
-              backgroundColor: "#0F766E",
-              color: "white",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
+          <button onClick={openAddForm} style={{ ...inputStyle, width: "auto", cursor: "pointer", backgroundColor: "#0F766E", color: "white", borderColor: "#0F766E", display: "flex", alignItems: "center", gap: "6px" }}>
             <Plus size={14} />
             Add Item
           </button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div style={{
-        display: "flex",
-        gap: "8px",
-        marginBottom: "16px",
-        flexWrap: "wrap",
-        alignItems: "center",
-      }}>
-        {/* Search */}
-        <div style={{ position: "relative", flex: "1 1 200px", maxWidth: "300px" }}>
-          <Search size={14} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#9CA3AF" }} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search items..."
-            style={{
-              width: "100%",
-              padding: "7px 10px 7px 30px",
-              fontSize: "13px",
-              border: "1px solid #E0E6E4",
-              borderRadius: "8px",
-              color: "#2C3E38",
-              outline: "none",
-            }}
-          />
+      <div style={{ ...panelStyle, padding: "16px", marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ position: "relative", flex: "1 1 240px", maxWidth: "320px" }}>
+          <Search size={14} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#98A2B3" }} />
+          <input type="text" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search items..." style={{ ...inputStyle, paddingLeft: "30px" }} />
         </div>
-
-        {/* Type filter */}
-        <FilterSelect
-          value={filterType}
-          onChange={setFilterType}
-          options={[
-            { value: "all", label: "All Types" },
-            { value: "expense", label: "Expense" },
-            { value: "charge", label: "Charge" },
-            { value: "both", label: "Both" },
-          ]}
-        />
-
-        {/* Category filter */}
-        <FilterSelect
-          value={filterCategory}
-          onChange={setFilterCategory}
-          options={[
-            { value: "all", label: "All Categories" },
-            ...uniqueCategories.map((c) => ({ value: c, label: c })),
-          ]}
-        />
-
-        {/* Service Type filter */}
-        <FilterSelect
-          value={filterServiceType}
-          onChange={setFilterServiceType}
-          options={[
-            { value: "all", label: "All Services" },
-            ...allServiceTypes.map((s) => ({ value: s, label: s })),
-          ]}
-        />
-
-        {/* Status filter */}
-        <FilterSelect
-          value={filterStatus}
-          onChange={setFilterStatus}
-          options={[
-            { value: "active", label: "Active" },
-            { value: "inactive", label: "Inactive" },
-            { value: "all", label: "All" },
-          ]}
-        />
-
-        <span style={{ fontSize: "12px", color: "#9CA3AF", marginLeft: "auto" }}>
-          {filtered.length} item{filtered.length !== 1 ? "s" : ""}
-        </span>
+        <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value)} style={{ ...inputStyle, width: "180px" }}>
+          <option value="all">All Categories</option>
+          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+        </select>
+        <select value={filterServiceType} onChange={(event) => setFilterServiceType(event.target.value)} style={{ ...inputStyle, width: "180px" }}>
+          <option value="all">All Services</option>
+          {SERVICE_TYPES.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)} style={{ ...inputStyle, width: "120px" }}>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="all">All</option>
+        </select>
+        <span style={{ marginLeft: "auto", fontSize: "12px", color: "#98A2B3" }}>{filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}</span>
       </div>
 
-      {/* Add Form (inline, above table) */}
-      {showAddForm && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid #0F766E",
-          borderRadius: "8px",
-          padding: "16px",
-          marginBottom: "12px",
-          display: "flex",
-          gap: "12px",
-          flexWrap: "wrap",
-          alignItems: "flex-end",
-        }}>
-          <div style={{ flex: "1 1 180px" }}>
-            <label style={{ fontSize: "11px", color: "#667085", display: "block", marginBottom: "3px" }}>Name *</label>
-            <input
-              type="text"
-              value={addForm.name || ""}
-              onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-              autoFocus
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ flex: "0 0 120px" }}>
-            <label style={{ fontSize: "11px", color: "#667085", display: "block", marginBottom: "3px" }}>Type</label>
-            <select
-              value={addForm.type || "expense"}
-              onChange={(e) => setAddForm({ ...addForm, type: e.target.value as any })}
-              style={inputStyle}
-            >
-              <option value="expense">Expense</option>
-              <option value="charge">Charge</option>
-              <option value="both">Both</option>
-            </select>
-          </div>
-          <div style={{ flex: "1 1 160px" }}>
-            <label style={{ fontSize: "11px", color: "#667085", display: "block", marginBottom: "3px" }}>Category</label>
-            <input
-              type="text"
-              value={addForm.category || ""}
-              onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
-              placeholder="e.g. Government Fees"
-              list="add-category-datalist"
-              style={inputStyle}
-            />
-            <datalist id="add-category-datalist">
-              {categories.map((c) => <option key={c.id} value={c.name} />)}
-            </datalist>
-          </div>
-          <div style={{ flex: "1 1 200px" }}>
-            <label style={{ fontSize: "11px", color: "#667085", display: "block", marginBottom: "3px" }}>Service Types</label>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {allServiceTypes.map((s) => (
-                <label key={s} style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "11px", color: "#2C3E38", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={addForm.service_types?.includes(s) || false}
-                    onChange={() => {
-                      const current = addForm.service_types || [];
-                      const updated = current.includes(s) ? current.filter((x) => x !== s) : [...current, s];
-                      setAddForm({ ...addForm, service_types: updated });
-                    }}
-                    style={{ accentColor: "#0F766E" }}
-                  />
-                  {s}
-                </label>
-              ))}
+      {formMode && (
+        <div style={{ ...panelStyle, padding: "16px", marginBottom: "16px" }}>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#12332B", marginBottom: "12px" }}>{formMode === "add" ? "Add Item" : "Edit Item"}</div>
+          <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+            <div>
+              <label style={labelStyle}>Name *</label>
+              <input type="text" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} autoFocus style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Description</label>
+              <input type="text" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Category</label>
+              <select value={form.category_id} onChange={(event) => setForm({ ...form, category_id: event.target.value })} style={inputStyle}>
+                <option value="">Uncategorized</option>
+                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Unit</label>
+              <select value={form.unit_type} onChange={(event) => setForm({ ...form, unit_type: event.target.value })} style={inputStyle}>
+                {UNIT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Default Price</label>
+              <input type="number" min="0" step="0.01" value={form.default_price} onChange={(event) => setForm({ ...form, default_price: event.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Currency</label>
+              <select value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })} style={inputStyle}>
+                <option value="PHP">PHP</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Tax</label>
+              <select value={form.tax_code} onChange={(event) => setForm({ ...form, tax_code: event.target.value })} style={inputStyle}>
+                {TAX_OPTIONS.map((option) => <option key={option.value || "none"} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelStyle}>Service Types</label>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                {SERVICE_TYPES.map((serviceType) => (
+                  <label key={serviceType} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#344054", cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.service_types.includes(serviceType)} onChange={() => setForm({ ...form, service_types: toggleServiceType(form.service_types, serviceType) })} style={{ accentColor: "#0F766E" }} />
+                    {serviceType}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-          <div style={{ flex: "0 0 70px" }}>
-            <label style={{ fontSize: "11px", color: "#667085", display: "block", marginBottom: "3px" }}>Currency</label>
-            <select
-              value={addForm.default_currency || "PHP"}
-              onChange={(e) => setAddForm({ ...addForm, default_currency: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="PHP">PHP</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#2C3E38", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={addForm.is_taxable || false}
-                onChange={() => setAddForm({ ...addForm, is_taxable: !addForm.is_taxable })}
-                style={{ accentColor: "#0F766E" }}
-              />
-              Taxable
-            </label>
-          </div>
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button onClick={() => setShowAddForm(false)} style={cancelBtnStyle}>Cancel</button>
-            <button onClick={handleAdd} style={saveBtnStyle}>Create</button>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
+            <button onClick={closeForm} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>Cancel</button>
+            <button onClick={handleSubmit} style={{ ...inputStyle, width: "auto", cursor: "pointer", backgroundColor: "#0F766E", color: "white", borderColor: "#0F766E" }}>{formMode === "add" ? "Create" : "Save"}</button>
           </div>
         </div>
       )}
 
-      {/* Table */}
-      <div style={{
-        backgroundColor: "white",
-        border: "1px solid #E0E6E4",
-        borderRadius: "8px",
-        overflow: "hidden",
-      }}>
+      <div style={panelStyle}>
         {isLoading ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "#9CA3AF" }}>Loading catalog...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "#9CA3AF" }}>
-            {items.length === 0
-              ? 'No catalog items yet. Click "Seed Defaults" to add common items.'
-              : "No items match your filters."}
-          </div>
+          <div style={{ padding: "40px", textAlign: "center", color: "#98A2B3" }}>Loading catalog...</div>
+        ) : filteredItems.length === 0 ? (
+          <div style={{ padding: "40px", textAlign: "center", color: "#98A2B3" }}>No items match your filters.</div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ backgroundColor: "#F9FAFB", borderBottom: "1px solid #E0E6E4" }}>
-                <th style={thStyle}>Name</th>
-                <th style={{ ...thStyle, width: "80px" }}>Type</th>
-                <th style={{ ...thStyle, width: "140px" }}>Category</th>
-                <th style={thStyle}>Services</th>
-                <th style={{ ...thStyle, width: "60px" }}>Curr.</th>
-                <th style={{ ...thStyle, width: "50px", textAlign: "center" }}>Tax</th>
-                <th style={{ ...thStyle, width: "60px", textAlign: "center" }}>Status</th>
-                <th style={{ ...thStyle, width: "80px", textAlign: "center" }}>Actions</th>
+                {["Name", "Category", "Services", "Unit", "Price", "Tax", "Status", "Actions"].map((label) => (
+                  <th key={label} style={{ padding: "10px 12px", fontSize: "11px", fontWeight: 600, color: "#667085", textAlign: label === "Price" ? "right" : "left", textTransform: "uppercase", letterSpacing: "0.3px" }}>{label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item) => (
-                editingId === item.id ? (
-                  <EditRow
-                    key={item.id}
-                    item={item}
-                    editForm={editForm}
-                    setEditForm={setEditForm}
-                    categories={categories}
-                    allServiceTypes={allServiceTypes}
-                    onSave={() => handleSave(item.id)}
-                    onCancel={() => setEditingId(null)}
-                  />
-                ) : (
-                  <tr
-                    key={item.id}
-                    style={{
-                      borderBottom: "1px solid #F0F0F0",
-                      opacity: item.is_active ? 1 : 0.5,
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <span style={{ fontWeight: 500, color: "#2C3E38" }}>{item.name}</span>
-                    </td>
-                    <td style={tdStyle}>{typeBadge(item.type)}</td>
-                    <td style={{ ...tdStyle, color: "#667085" }}>{item.category}</td>
-                    <td style={tdStyle}>
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                        {item.service_types?.map((s) => serviceTag(s))}
-                      </div>
-                    </td>
-                    <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "12px" }}>{item.default_currency}</td>
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      {item.is_taxable && <Check size={14} style={{ color: "#0F766E" }} />}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <span style={{
-                        fontSize: "10px",
-                        fontWeight: 500,
-                        padding: "2px 6px",
-                        borderRadius: "4px",
-                        backgroundColor: item.is_active ? "#ECFDF5" : "#FEF2F2",
-                        color: item.is_active ? "#065F46" : "#991B1B",
-                      }}>
-                        {item.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <div style={{ display: "flex", gap: "4px", justifyContent: "center" }}>
-                        <button
-                          onClick={() => {
-                            setEditingId(item.id);
-                            setEditForm({ ...item });
-                          }}
-                          title="Edit"
-                          style={iconBtnStyle}
-                        >
-                          <Pencil size={13} />
+              {filteredItems.map((item) => (
+                <tr key={item.id} style={{ borderBottom: "1px solid #F2F4F7", opacity: item.is_active ? 1 : 0.6 }}>
+                  <td style={{ padding: "12px" }}>
+                    <div style={{ fontWeight: 500, color: "#12332B" }}>{item.name}</div>
+                    {item.description ? <div style={{ marginTop: "4px", fontSize: "12px", color: "#667085" }}>{item.description}</div> : null}
+                  </td>
+                  <td style={{ padding: "12px", color: "#667085" }}>{categoryById[item.category_id || ""] || "Uncategorized"}</td>
+                  <td style={{ padding: "12px" }}>
+                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                      {item.service_types.length ? item.service_types.map((serviceType) => <span key={serviceType} style={{ padding: "2px 6px", borderRadius: "999px", backgroundColor: "#ECFDF3", color: "#027A48", fontSize: "10px", fontWeight: 600 }}>{serviceType}</span>) : <span style={{ color: "#98A2B3" }}>All</span>}
+                    </div>
+                  </td>
+                  <td style={{ padding: "12px" }}>{formatUnitType(item.unit_type)}</td>
+                  <td style={{ padding: "12px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatPrice(item.default_price, item.currency)}</td>
+                  <td style={{ padding: "12px" }}>{item.tax_code || "-"}</td>
+                  <td style={{ padding: "12px" }}>
+                    <span style={{ padding: "2px 6px", borderRadius: "999px", backgroundColor: item.is_active ? "#ECFDF3" : "#FEF3F2", color: item.is_active ? "#027A48" : "#B42318", fontSize: "10px", fontWeight: 600 }}>
+                      {item.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px" }}>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button onClick={() => openEditForm(item)} title="Edit" style={{ ...inputStyle, width: "auto", padding: "6px 8px", cursor: "pointer" }}>
+                        <Pencil size={13} />
+                      </button>
+                      {item.is_active ? (
+                        <button onClick={() => setItemActiveState(item.id, false)} title="Deactivate" style={{ ...inputStyle, width: "auto", padding: "6px 8px", cursor: "pointer", color: "#B42318" }}>
+                          <X size={13} />
                         </button>
-                        {item.is_active ? (
-                          <button
-                            onClick={() => handleDeactivate(item.id)}
-                            title="Deactivate"
-                            style={{ ...iconBtnStyle, color: "#DC2626" }}
-                          >
-                            <X size={13} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleReactivate(item.id)}
-                            title="Reactivate"
-                            style={{ ...iconBtnStyle, color: "#0F766E" }}
-                          >
-                            <RotateCcw size={13} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
+                      ) : (
+                        <button onClick={() => setItemActiveState(item.id, true)} title="Reactivate" style={{ ...inputStyle, width: "auto", padding: "6px 8px", cursor: "pointer", color: "#027A48" }}>
+                          <RotateCcw size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -586,224 +454,4 @@ export function CatalogManagementPage() {
       </div>
     </div>
   );
-}
-
-// ==================== SUB-COMPONENTS ====================
-
-function FilterSelect({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={{
-        padding: "7px 10px",
-        fontSize: "12px",
-        border: "1px solid #E0E6E4",
-        borderRadius: "8px",
-        color: "#2C3E38",
-        backgroundColor: "white",
-        cursor: "pointer",
-        outline: "none",
-      }}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
-  );
-}
-
-function EditRow({
-  item,
-  editForm,
-  setEditForm,
-  categories,
-  allServiceTypes,
-  onSave,
-  onCancel,
-}: {
-  item: CatalogItem;
-  editForm: Partial<CatalogItem>;
-  setEditForm: (f: Partial<CatalogItem>) => void;
-  categories: CatalogCategory[];
-  allServiceTypes: string[];
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <tr style={{ borderBottom: "1px solid #E0E6E4", backgroundColor: "#FAFFFE" }}>
-      <td style={tdStyle}>
-        <input
-          type="text"
-          value={editForm.name || ""}
-          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-          style={{ ...inputStyle, fontWeight: 500 }}
-          autoFocus
-        />
-      </td>
-      <td style={tdStyle}>
-        <select
-          value={editForm.type || "expense"}
-          onChange={(e) => setEditForm({ ...editForm, type: e.target.value as any })}
-          style={{ ...inputStyle, fontSize: "11px", padding: "4px 6px" }}
-        >
-          <option value="expense">Expense</option>
-          <option value="charge">Charge</option>
-          <option value="both">Both</option>
-        </select>
-      </td>
-      <td style={tdStyle}>
-        <input
-          type="text"
-          value={editForm.category || ""}
-          onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-          list="edit-category-datalist"
-          style={{ ...inputStyle, fontSize: "11px" }}
-        />
-        <datalist id="edit-category-datalist">
-          {categories.map((c) => <option key={c.id} value={c.name} />)}
-        </datalist>
-      </td>
-      <td style={tdStyle}>
-        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-          {allServiceTypes.map((s) => (
-            <label key={s} style={{ display: "flex", alignItems: "center", gap: "2px", fontSize: "10px", cursor: "pointer", color: "#2C3E38" }}>
-              <input
-                type="checkbox"
-                checked={editForm.service_types?.includes(s) || false}
-                onChange={() => {
-                  const current = editForm.service_types || [];
-                  const updated = current.includes(s) ? current.filter((x) => x !== s) : [...current, s];
-                  setEditForm({ ...editForm, service_types: updated });
-                }}
-                style={{ accentColor: "#0F766E", width: "12px", height: "12px" }}
-              />
-              {s}
-            </label>
-          ))}
-        </div>
-      </td>
-      <td style={tdStyle}>
-        <select
-          value={editForm.default_currency || "PHP"}
-          onChange={(e) => setEditForm({ ...editForm, default_currency: e.target.value })}
-          style={{ ...inputStyle, fontSize: "11px", padding: "4px 6px", width: "60px" }}
-        >
-          <option value="PHP">PHP</option>
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-        </select>
-      </td>
-      <td style={{ ...tdStyle, textAlign: "center" }}>
-        <input
-          type="checkbox"
-          checked={editForm.is_taxable || false}
-          onChange={() => setEditForm({ ...editForm, is_taxable: !editForm.is_taxable })}
-          style={{ accentColor: "#0F766E" }}
-        />
-      </td>
-      <td style={{ ...tdStyle, textAlign: "center" }}>
-        <span style={{ fontSize: "10px", color: "#9CA3AF" }}>—</span>
-      </td>
-      <td style={{ ...tdStyle, textAlign: "center" }}>
-        <div style={{ display: "flex", gap: "4px", justifyContent: "center" }}>
-          <button onClick={onSave} title="Save" style={{ ...iconBtnStyle, color: "#0F766E" }}>
-            <Check size={14} />
-          </button>
-          <button onClick={onCancel} title="Cancel" style={{ ...iconBtnStyle, color: "#9CA3AF" }}>
-            <X size={14} />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-// ==================== SHARED STYLES ====================
-
-const thStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  fontSize: "11px",
-  fontWeight: 600,
-  color: "#667085",
-  textAlign: "left",
-  textTransform: "uppercase",
-  letterSpacing: "0.3px",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  fontSize: "13px",
-  verticalAlign: "middle",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "6px 8px",
-  fontSize: "13px",
-  border: "1px solid #E0E6E4",
-  borderRadius: "6px",
-  color: "#2C3E38",
-  outline: "none",
-};
-
-const iconBtnStyle: React.CSSProperties = {
-  padding: "4px",
-  border: "none",
-  backgroundColor: "transparent",
-  cursor: "pointer",
-  color: "#667085",
-  borderRadius: "4px",
-  display: "flex",
-  alignItems: "center",
-};
-
-const cancelBtnStyle: React.CSSProperties = {
-  padding: "6px 12px",
-  fontSize: "12px",
-  fontWeight: 500,
-  borderRadius: "6px",
-  border: "1px solid #E0E6E4",
-  backgroundColor: "white",
-  color: "#667085",
-  cursor: "pointer",
-};
-
-const saveBtnStyle: React.CSSProperties = {
-  padding: "6px 12px",
-  fontSize: "12px",
-  fontWeight: 500,
-  borderRadius: "6px",
-  border: "none",
-  backgroundColor: "#0F766E",
-  color: "white",
-  cursor: "pointer",
-};
-
-// Type re-export for EditRow (needed since it's a separate function component)
-interface CatalogItem {
-  id: string;
-  name: string;
-  type: "expense" | "charge" | "both";
-  category: string;
-  service_types: string[];
-  default_currency: string;
-  default_amount: number | null;
-  is_taxable: boolean;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CatalogCategory {
-  id: string;
-  name: string;
 }

@@ -18,6 +18,8 @@ interface AggregateFinancialShellProps {
   onScopeChange: (scope: DateScope) => void;
   /** KPI cards to display */
   kpiCards: KPICard[];
+  /** Optional demo targets for individual KPI cards keyed by label */
+  kpiCardTargetIds?: Record<string, string | undefined>;
   /** Loading state */
   isLoading?: boolean;
   /** Hide the built-in ScopeBar (when lifted to module header) */
@@ -30,6 +32,7 @@ export function AggregateFinancialShell({
   scope,
   onScopeChange,
   kpiCards,
+  kpiCardTargetIds,
   isLoading,
   hideScopeBar,
   children,
@@ -40,7 +43,7 @@ export function AggregateFinancialShell({
       {!hideScopeBar && <ScopeBar scope={scope} onScopeChange={onScopeChange} />}
 
       {/* KPI Strip */}
-      <KPIStrip cards={kpiCards} isLoading={isLoading} />
+      <KPIStrip cards={kpiCards} isLoading={isLoading} cardTargetIds={kpiCardTargetIds} />
 
       {/* Content (table / grouped table / etc.) */}
       <div className="mt-1 flex flex-col gap-4">

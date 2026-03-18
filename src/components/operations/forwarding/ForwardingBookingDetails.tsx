@@ -22,6 +22,9 @@ interface ForwardingBookingDetailsProps {
   currentUser?: { name: string; email: string; department: string } | null;
   initialTab?: string | null;
   highlightId?: string | null;
+  demoMode?: boolean;
+  onDemoStatusUpdate?: (booking: ForwardingBooking, status: ExecutionStatus) => void;
+  statusButtonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 type DetailTab = "booking-info" | "billings" | "expenses" | "comments";
@@ -73,7 +76,10 @@ export function ForwardingBookingDetails({
   onBookingUpdated,
   currentUser,
   initialTab,
-  highlightId
+  highlightId,
+  demoMode = false,
+  onDemoStatusUpdate,
+  statusButtonProps,
 }: ForwardingBookingDetailsProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>(
     (initialTab as DetailTab) || "booking-info"
@@ -123,6 +129,14 @@ export function ForwardingBookingDetails({
       statusTo: newStatus
     };
     setActivityLog(prev => [newActivity, ...prev]);
+
+    // Persist to backend
+    if (demoMode) {
+      toast.success(`Status updated to ${newStatus}`);
+      onDemoStatusUpdate?.({ ...editedBooking, status: newStatus }, newStatus);
+      onBookingUpdated();
+      return;
+    }
 
     // Persist to backend
     try {
@@ -201,6 +215,7 @@ export function ForwardingBookingDetails({
         <StatusSelector 
           status={editedBooking.status} 
           onUpdateStatus={handleStatusUpdate}
+          buttonProps={statusButtonProps}
         />
       </div>
 

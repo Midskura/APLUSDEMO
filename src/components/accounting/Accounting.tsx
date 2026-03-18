@@ -8,7 +8,7 @@ import { ProjectsModule } from "../projects/ProjectsModule";
 import { ContractsModule } from "../contracts/ContractsModule";
 import { AccountingCustomers } from "./AccountingCustomers";
 import { TransactionsModule } from "../transactions/TransactionsModule";
-import { AuditingModule } from "./AuditingModule";
+import { CatalogManagementPage } from "./CatalogManagementPage";
 import { AggregateInvoicesPage } from "./AggregateInvoicesPage";
 import { FinancialHealthPage } from "./reports/FinancialHealthPage";
 import { ReportsModule } from "./reports/ReportsModule";
@@ -32,7 +32,7 @@ export function Accounting({ view }: { view: AccountingView }) {
   }
 
   if (view === "catalog") {
-    return <AuditingModule />;
+    return <CatalogManagementPage />;
   }
 
   if (view === "evouchers") {

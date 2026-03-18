@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase/client";
 import { toast } from "../components/ui/toast-utils";
+import {
+  calculateFinancialTotals,
+  convertQuotationToVirtualItems,
+  mergeVirtualItemsWithRealItems,
+  mergeBillableExpenses,
+  type FinancialTotals,
+} from "../utils/financialCalculations";
 
 export interface FinancialData {
   invoices: any[];

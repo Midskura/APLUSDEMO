@@ -19,6 +19,7 @@ import { CustomDropdown } from "../../bd/CustomDropdown";
 interface GroupingToolbarProps {
   scope?: DateScope;
   onScopeChange?: (scope: DateScope) => void;
+  scopeButtonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 
   groupByOptions: GroupOption[];
   groupBy: string;
@@ -48,6 +49,7 @@ interface GroupingToolbarProps {
 export function GroupingToolbar({
   scope,
   onScopeChange,
+  scopeButtonProps,
   groupByOptions,
   groupBy,
   onGroupByChange,
@@ -132,7 +134,7 @@ export function GroupingToolbar({
       <div className="flex items-center gap-2 flex-wrap">
         {/* Scope chip */}
         {scope && onScopeChange && (
-          <ScopeBar scope={scope} onScopeChange={onScopeChange} standalone />
+          <ScopeBar scope={scope} onScopeChange={onScopeChange} standalone buttonProps={scopeButtonProps} />
         )}
 
         {/* Group-by chip dropdown */}

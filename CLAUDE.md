@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Summary
 
-**Neuron OS** — a desktop web app for asset-light freight forwarding SMEs in the Philippines. Manages the full business lifecycle: sales → quotations → contracts → operations bookings → accounting (billings, expenses, invoices, collections) → HR → executive reporting.
+**Neuron OS** — a desktop web app for asset-light freight forwarding SMEs in the Philippines. Manages the full business lifecycle: sales → quotations → contracts → operations bookings → accounting (billings, expenses, invoices, collections) → HR → executive reporting. ~250 React component files, 35 Supabase tables.
 
-Development is now fully local with Claude Code. No Figma Make. No Edge Functions. All data access goes through the Supabase JS client directly.
+Development is fully local with Claude Code. No Figma Make. No Edge Functions. All data access goes through the Supabase JS client directly.
 
 ## Commands
 
 ```bash
+npm i            # Install dependencies
 npm run dev      # Start Vite dev server
 npm run build    # Build for production
 ```
@@ -88,6 +89,41 @@ operations_role: 'Manager' | 'Supervisor' | 'Handler'  (Operations only)
 
 Role hierarchy: rep (0) < manager (1) < director (2). Executive department auto-promotes to director privileges.
 
+## Module Architecture
+
+The app is organized around these domain modules under `/src/components/`:
+
+| Module | Directory | Purpose |
+|---|---|---|
+| Business Development | `bd/` | Sales pipeline — contacts, customers, inquiries, tasks, activities, budget requests |
+| Pricing | `pricing/` | Quotation building, contract management, vendor management |
+| Operations | `operations/` | Booking management for 5 service types (Forwarding, Brokerage, Trucking, Marine Insurance, Others) |
+| Projects | `projects/` | Central entity linking quotations, bookings, and financials |
+| Contracts | `contracts/` | Contract lifecycle — list, create bookings from contracts, rate cards |
+| Accounting | `accounting/` | Billings, expenses, invoices, collections, e-vouchers, COA, reports |
+| Transactions | `transactions/` | Bank account tracking and transaction management |
+| CRM | `crm/` | Contact and customer management (shared across BD, Pricing) |
+| HR | `hr/` | Employee management, payroll, timekeeping |
+| Reports | `reports/` | Cross-module financial reports |
+
+Key shell components: `App.tsx` (all routes), `Layout.tsx` (sidebar + content area), `NeuronSidebar.tsx` (department-gated nav), `RouteGuard.tsx` (RBAC enforcement).
+
+## Entity Data Flow
+
+```
+Customer → Quotation (spot) → Project → Bookings (FWD-/BRK-/TRK-/MI-/OTH- prefix)
+         → Quotation (contract) → Contract → Bookings
+                                           ↓
+                              Billing Items → Invoice → Collections
+                              Expenses → E-Vouchers
+```
+
+- **Booking ID prefixes**: `FWD-` (Forwarding), `BRK-` (Brokerage), `TRK-` (Trucking), `MI-` (Marine Insurance), `OTH-` (Others)
+- **Quotations vs Contracts**: Same `quotations` table, distinguished by `quotation_type: "spot" | "contract"`
+- **Billing Items vs Invoices**: `billing_items` are line-item atoms; `billings` with `invoice_number` are invoice documents
+- **E-Vouchers**: The `transaction_type` field distinguishes expense (`"Expense"`) from collection (`"Collection"`) vouchers
+- **Accounting modes**: "Essentials" (aggregate/simplified views) vs "Full Suite" (per-project/booking detail views) — components come in pairs (e.g., `BillingsContent.tsx` / `BillingsContentNew.tsx`)
+
 ## Development Workflow
 
 This project is **blueprint-driven**:
@@ -95,6 +131,19 @@ This project is **blueprint-driven**:
 2. Create/update a blueprint with a phased plan
 3. Wait for explicit "Go Ahead" before writing code
 4. Implement one phase at a time, update the blueprint after each phase
+
+## Files Requiring Re-Read Before Modification
+
+These files have been manually edited outside of AI sessions:
+
+| File | Why |
+|---|---|
+| `src/components/pricing/quotations/QuotationBuilderV3.tsx` | Complex quotation editor, manual edits |
+| `src/components/pricing/ContractDetailView.tsx` | Contract detail with smart fallbacks |
+| `src/components/bd/CustomDropdown.tsx` | Portal-based rendering pattern (critical) |
+| `src/utils/quotation-helpers.tsx` | Quotation utility functions |
+| `src/components/accounting/CatalogManagementPage.tsx` | Catalog UI |
+| `src/components/shared/pricing/CatalogItemCombobox.tsx` | One-click catalog add |
 
 ## Protected Files (NEVER modify)
 
@@ -111,15 +160,27 @@ This project is **blueprint-driven**:
 - `UnifiedInvoicesTab` — `/src/components/shared/invoices/`
 - `UnifiedCollectionsTab` — `/src/components/shared/collections/`
 
-**Quotations vs Contracts**: Same `quotations` table, distinguished by `quotation_type: "spot" | "contract"`.
-
-**Billing Items vs Invoices**: `billing_items` are line-item atoms; `billings` with `invoice_number` are invoice documents.
-
 **DataTable**: Use `/src/components/common/DataTable.tsx` for all tables, not custom-built tables.
 
 **Route Guards**: `/src/components/RouteGuard.tsx` wraps routes in `App.tsx` by department/role. Always use this for protected routes.
 
 **JSONB details columns**: Tables like `quotations`, `projects`, `bookings`, `evouchers` store overflow fields in a `details` JSONB column. Always merge: `{ ...data?.details, ...data }`.
+
+## Code Style
+
+- **Components**: PascalCase `.tsx` (e.g., `AggregateBillingsPage.tsx`)
+- **Utils**: camelCase `.ts` (e.g., `contractRateEngine.ts`)
+- **Hooks**: `use` prefix, camelCase `.ts/.tsx` (e.g., `useProjectFinancials.ts`)
+- **CSS**: Inline Tailwind classes. No custom CSS except design tokens in `globals.css`.
+
+## Key Utils
+
+| Utility | Purpose |
+|---|---|
+| `contractRateEngine.ts` | Calculates billing from contract rates + booking quantities |
+| `financialCalculations.ts` | `calculateFinancialTotals()` — central financial math |
+| `permissions.ts` | RBAC permission functions (canonical dept/role values) |
+| `projectStatus.ts` / `bookingStatus.ts` | Status helpers |
 
 ## Stale Context Files — Read With Caution
 
@@ -138,8 +199,7 @@ Still-valid context files:
 - `WORKING_CONVENTIONS.md` — code style and DRY rules, still applies
 - `PROJECT_OVERVIEW.md` — high-level domain overview, still useful
 
-Authoritative post-migration doc:
-- `/src/docs/handoff/Claude_Instructions_Handoff.md`
+Authoritative post-migration doc: `/src/docs/handoff/Claude_Instructions_Handoff.md`
 
 ## Pending (Requires Manual Action in Supabase Dashboard)
 

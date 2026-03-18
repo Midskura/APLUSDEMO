@@ -79,6 +79,7 @@ import type { TruckingLineItem } from "../../../types/pricing";
 import { QuotationRateBreakdownSheet } from "./QuotationRateBreakdownSheet";
 import type { BookingQuantities } from "../../../utils/contractRateEngine";
 import { ContractRateToolbar } from "./ContractRateToolbar";
+import type { Customer } from "../../../types/bd";
 
 interface ContainerEntry {
   id: string;
@@ -211,9 +212,48 @@ interface QuotationBuilderV3Props {
   isAmendment?: boolean; // New prop: when true, adjusts buttons for amendment workflow (only "Save Changes")
   onAmend?: () => void; // New prop: Handler for amendment in view mode
   initialQuotationType?: QuotationType; // New prop: pre-set quotation type from external selection
+  primaryActionLabel?: string;
+  onStateSnapshotChange?: (snapshot: {
+    customerId: string;
+    customerName: string;
+    movement: "IMPORT" | "EXPORT";
+    selectedServices: string[];
+    forwardingData: ForwardingFormData;
+    quoteNumber: string;
+  }) => void;
+  allowForwardingModeEditInViewMode?: boolean;
+  demoCustomerOptions?: Customer[];
+  demoTargetIds?: {
+    movement?: string;
+    customer?: string;
+    forwardingService?: string;
+    aodPod?: string;
+    forwardingMode?: string;
+    submit?: string;
+  };
+  onMovementInteract?: () => void;
 }
 
-export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "create", customerData, contactData, builderMode = "quotation", viewMode = false, hideHeader = false, isAmendment = false, onAmend, initialQuotationType }: QuotationBuilderV3Props) {
+export function QuotationBuilderV3({
+  onClose,
+  onSave,
+  initialData,
+  mode = "create",
+  customerData,
+  contactData,
+  builderMode = "quotation",
+  viewMode = false,
+  hideHeader = false,
+  isAmendment = false,
+  onAmend,
+  initialQuotationType,
+  primaryActionLabel,
+  onStateSnapshotChange,
+  allowForwardingModeEditInViewMode = false,
+  demoCustomerOptions,
+  demoTargetIds,
+  onMovementInteract,
+}: QuotationBuilderV3Props) {
   // Check if quotation is locked (converted to project)
   const isLocked = mode === "edit" && initialData?.project_id;
   
@@ -598,6 +638,25 @@ export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "creat
   // ✨ NEW: Dual-Section Pricing (Buying vs Selling)
   const [buyingPrice, setBuyingPrice] = useState<BuyingPriceCategory[]>(initialData?.buying_price || []);
   const [sellingPrice, setSellingPrice] = useState<SellingPriceCategory[]>(initialData?.selling_price || []);
+
+  useEffect(() => {
+    onStateSnapshotChange?.({
+      customerId,
+      customerName,
+      movement,
+      selectedServices,
+      forwardingData,
+      quoteNumber,
+    });
+  }, [
+    customerId,
+    customerName,
+    movement,
+    selectedServices,
+    forwardingData,
+    quoteNumber,
+    onStateSnapshotChange,
+  ]);
 
   // ✨ GENERALIZED: Which selected services are covered by the detected contract?
   const contractCoveredServices = (() => {
@@ -2126,6 +2185,7 @@ export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "creat
           <button
             onClick={handleSubmit}
             disabled={!isFormValid() || isLocked}
+            data-demo-target={demoTargetIds?.submit}
             style={{
               padding: "8px 24px",
               fontSize: "13px",
@@ -2141,12 +2201,13 @@ export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "creat
             }}
           >
             <FileText size={16} />
-            {isAmendment 
-              ? "Save Changes" 
-              : builderMode === "inquiry" 
-                ? `Submit ${typeLabel} Inquiry to Pricing` 
-                : `Submit ${typeLabel} for Approval`
-            }
+            {primaryActionLabel || (
+              isAmendment 
+                ? "Save Changes" 
+                : builderMode === "inquiry" 
+                  ? `Submit ${typeLabel} Inquiry to Pricing` 
+                  : `Submit ${typeLabel} for Approval`
+            )}
           </button>
         </div>
       </div>
@@ -2255,6 +2316,13 @@ export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "creat
               contract: detectedContract,
               noContractFound: !contractBridgeLoading && !detectedContract && customerName.trim().length >= 3,
             } : undefined}
+            demoCustomerOptions={demoCustomerOptions}
+            demoTargetIds={{
+              movement: demoTargetIds?.movement,
+              customer: demoTargetIds?.customer,
+              forwardingService: demoTargetIds?.forwardingService,
+            }}
+            onMovementInteract={onMovementInteract}
           />
 
           {/* ✨ CONTRACT: General Details Section (Port of Entry, Transportation, Type of Entry, Releasing) */}
@@ -2317,6 +2385,11 @@ export function QuotationBuilderV3({ onClose, onSave, initialData, mode = "creat
               movement={movement}
               contractMode={isContractMode}
               headerToolbar={renderContractToolbar("Forwarding")}
+              allowModeEditInViewMode={allowForwardingModeEditInViewMode}
+              demoTargetIds={{
+                aodPod: demoTargetIds?.aodPod,
+                mode: demoTargetIds?.forwardingMode,
+              }}
             />
           )}
 

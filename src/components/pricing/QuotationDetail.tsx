@@ -15,9 +15,39 @@ interface QuotationDetailProps {
   onConvertToProject?: (projectId: string) => void;
   onConvertToContract?: (quotationId: string) => void;
   currentUser?: { id: string; name: string; email: string; department: string } | null;
+  onForwardingStateSnapshotChange?: (snapshot: any) => void;
+  allowForwardingModeEditInViewMode?: boolean;
+  onViewModeChange?: (mode: "form" | "pdf") => void;
+  pdfPrimaryActionLabel?: string;
+  onPdfPrimaryAction?: () => void;
+  demoTargetIds?: {
+    forwardingMode?: string;
+    pdfToggleGroup?: string;
+    pdfView?: string;
+    pdfPrimaryAction?: string;
+  };
 }
 
-export function QuotationDetail({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onUpdate, onDuplicate, onDelete, onCreateTicket, onConvertToProject, onConvertToContract, currentUser }: QuotationDetailProps) {
+export function QuotationDetail({
+  quotation,
+  onBack,
+  onEdit,
+  userDepartment,
+  onAcceptQuotation,
+  onUpdate,
+  onDuplicate,
+  onDelete,
+  onCreateTicket,
+  onConvertToProject,
+  onConvertToContract,
+  currentUser,
+  onForwardingStateSnapshotChange,
+  allowForwardingModeEditInViewMode = false,
+  onViewModeChange,
+  pdfPrimaryActionLabel,
+  onPdfPrimaryAction,
+  demoTargetIds,
+}: QuotationDetailProps) {
   const handleUpdate = (updatedQuotation: QuotationNew) => {
     if (onUpdate) {
       onUpdate(updatedQuotation);
@@ -38,6 +68,12 @@ export function QuotationDetail({ quotation, onBack, onEdit, userDepartment, onA
       onConvertToProject={onConvertToProject}
       onConvertToContract={onConvertToContract}
       currentUser={currentUser}
+      onForwardingStateSnapshotChange={onForwardingStateSnapshotChange}
+      allowForwardingModeEditInViewMode={allowForwardingModeEditInViewMode}
+      onViewModeChange={onViewModeChange}
+      pdfPrimaryActionLabel={pdfPrimaryActionLabel}
+      onPdfPrimaryAction={onPdfPrimaryAction}
+      demoTargetIds={demoTargetIds}
     />
   );
 }

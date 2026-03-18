@@ -27,6 +27,7 @@ interface CustomDropdownProps {
   multiSelect?: boolean;
   multiValue?: string[];
   onMultiChange?: (values: string[]) => void;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 export function CustomDropdown({ 
@@ -45,12 +46,14 @@ export function CustomDropdown({
   multiSelect = false,
   multiValue = [],
   onMultiChange,
+  buttonProps,
 }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+  const interactionGroupId = (buttonProps as Record<string, unknown> | undefined)?.["data-demo-interaction-group"] as string | undefined;
 
   // Compute position when opening
   useEffect(() => {
@@ -165,6 +168,7 @@ export function CustomDropdown({
               e.currentTarget.style.backgroundColor = "#FFFFFF";
             }
           }}
+          {...buttonProps}
         >
           <span style={{ 
             color: buttonStyle?.color 
@@ -199,6 +203,7 @@ export function CustomDropdown({
           createPortal(
             <div
               ref={menuRef}
+              data-demo-interaction-group={interactionGroupId}
               className="rounded-lg overflow-hidden min-w-full"
               style={{
                 position: "fixed",
@@ -304,6 +309,7 @@ export function CustomDropdown({
               e.currentTarget.style.borderColor = "#E5E7EB";
             }
           }}
+          {...buttonProps}
         >
           <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: "6px" }}>
             {displayIcon && <span style={{ display: "flex", alignItems: "center" }}>{displayIcon}</span>}
@@ -324,6 +330,7 @@ export function CustomDropdown({
           createPortal(
             <div
               ref={menuRef}
+              data-demo-interaction-group={interactionGroupId}
               className="rounded-lg overflow-hidden"
               style={{
                 position: "fixed",

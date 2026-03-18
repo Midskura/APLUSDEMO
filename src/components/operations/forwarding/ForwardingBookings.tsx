@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, Search, Package, Briefcase, UserCheck, FileEdit, Clock, CheckCircle, Trash2 } from "lucide-react";
 import { CreateForwardingBookingPanel } from "./CreateForwardingBookingPanel";
 import type { ForwardingBooking, ExecutionStatus } from "../../../types/operations";
@@ -14,6 +14,14 @@ interface ForwardingBookingsProps {
   currentUser?: { id?: string; name: string; email: string; department: string } | null;
   /** Deep-link: auto-select this booking when loaded */
   pendingBookingId?: string | null;
+  demoMode?: boolean;
+  injectedBookings?: ForwardingBooking[];
+  createModalOpen?: boolean;
+  onCreateModalOpenChange?: (open: boolean) => void;
+  createPanelProps?: Partial<React.ComponentProps<typeof CreateForwardingBookingPanel>>;
+  highlightedBookingId?: string | null;
+  rowTargetId?: string;
+  onBookingCreated?: (booking: ForwardingBooking) => void;
 }
 
 /** Maps a unified bookings row to the ForwardingBooking shape */
@@ -38,8 +46,20 @@ function mapToForwardingBooking(row: Record<string, any>): ForwardingBooking {
   } as ForwardingBooking;
 }
 
-export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookingId }: ForwardingBookingsProps) {
-  const [showCreateModal, setShowCreateModal] = useState(false);
+export function ForwardingBookings({
+  onSelectBooking,
+  currentUser,
+  pendingBookingId,
+  demoMode = false,
+  injectedBookings = [],
+  createModalOpen,
+  onCreateModalOpenChange,
+  createPanelProps,
+  highlightedBookingId,
+  rowTargetId,
+  onBookingCreated,
+}: ForwardingBookingsProps) {
+  const [internalShowCreateModal, setInternalShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<ExecutionStatus | "all">("all");
   const [movementFilter, setMovementFilter] = useState<string>("all");
@@ -51,6 +71,7 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
 
   // ── Cached bookings fetch ─────────────────────────────────
   const bookingsFetcher = async (): Promise<ForwardingBooking[]> => {
+    if (demoMode) return [];
     const { data, error } = await supabase
       .from('bookings')
       .select('*')
@@ -61,22 +82,41 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
   };
 
   const { data: bookings, isLoading, refresh: fetchBookings } = useCachedFetch<ForwardingBooking[]>(
-    "forwarding-bookings",
+    demoMode ? "forwarding-bookings-demo" : "forwarding-bookings",
     bookingsFetcher,
     [],
   );
+  const tableIsLoading = demoMode ? false : isLoading;
+  const showCreateModal = createModalOpen ?? internalShowCreateModal;
+  const setShowCreateModal = onCreateModalOpenChange ?? setInternalShowCreateModal;
+  const mergedBookings = useMemo(() => {
+    const seen = new Set<string>();
+    return [...injectedBookings, ...bookings]
+      .filter((booking) => {
+      const key = booking.bookingId || booking.id;
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+      })
+      .sort((a, b) => new Date(b.createdAt || b.created_at || 0).getTime() - new Date(a.createdAt || a.created_at || 0).getTime());
+  }, [bookings, injectedBookings]);
 
   // Deep-link: auto-select booking from pendingBookingId
   useEffect(() => {
-    if (!pendingBookingId || bookings.length === 0 || isLoading) return;
-    const match = bookings.find(b => b.bookingId === pendingBookingId || b.id === pendingBookingId);
+    if (!pendingBookingId || mergedBookings.length === 0 || tableIsLoading) return;
+    const match = mergedBookings.find(b => b.bookingId === pendingBookingId || b.id === pendingBookingId);
     if (match) {
       onSelectBooking(match);
     }
-  }, [pendingBookingId, bookings, isLoading]);
+  }, [pendingBookingId, mergedBookings, onSelectBooking, tableIsLoading]);
 
-  const handleBookingCreated = () => {
+  const handleBookingCreated = (bookingData?: any) => {
     setShowCreateModal(false);
+    if (bookingData) {
+      onBookingCreated?.(bookingData as ForwardingBooking);
+      return;
+    }
     fetchBookings();
   };
 
@@ -100,24 +140,24 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
   };
 
   // Get unique values for filters
-  const uniqueOwners = Array.from(new Set(bookings.map(b => b.accountOwner).filter(Boolean)));
-  const uniqueModes = Array.from(new Set(bookings.map(b => b.mode).filter(Boolean)));
+  const uniqueOwners = Array.from(new Set(mergedBookings.map(b => b.accountOwner).filter(Boolean)));
+  const uniqueModes = Array.from(new Set(mergedBookings.map(b => b.mode).filter(Boolean)));
 
   // Filter bookings by tab first
   const getFilteredByTab = () => {
-    let filtered = bookings;
+    let filtered = mergedBookings;
 
     if (activeTab === "my") {
-      filtered = bookings.filter(b => 
+      filtered = mergedBookings.filter(b => 
         b.accountOwner === currentUser?.name || 
         b.accountHandler === currentUser?.name
       );
     } else if (activeTab === "draft") {
-      filtered = bookings.filter(b => b.status === "Draft");
+      filtered = mergedBookings.filter(b => b.status === "Draft");
     } else if (activeTab === "in-progress") {
-      filtered = bookings.filter(b => b.status === "In Progress");
+      filtered = mergedBookings.filter(b => b.status === "In Progress");
     } else if (activeTab === "completed") {
-      filtered = bookings.filter(b => b.status === "Completed");
+      filtered = mergedBookings.filter(b => b.status === "Completed");
     }
 
     return filtered;
@@ -162,13 +202,13 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
   });
 
   // Calculate counts for tabs
-  const allCount = bookings.length;
-  const myCount = bookings.filter(b => 
+  const allCount = mergedBookings.length;
+  const myCount = mergedBookings.filter(b => 
     b.accountOwner === currentUser?.name || b.accountHandler === currentUser?.name
   ).length;
-  const draftCount = bookings.filter(b => b.status === "Draft").length;
-  const inProgressCount = bookings.filter(b => b.status === "In Progress").length;
-  const completedCount = bookings.filter(b => b.status === "Completed").length;
+  const draftCount = mergedBookings.filter(b => b.status === "Draft").length;
+  const inProgressCount = mergedBookings.filter(b => b.status === "In Progress").length;
+  const completedCount = mergedBookings.filter(b => b.status === "Completed").length;
 
   return (
     <>
@@ -201,10 +241,12 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
             
             {/* Action Button */}
             <div className="flex items-center gap-3">
-              <NeuronRefreshButton 
-                onRefresh={fetchBookings}
-                label="Refresh bookings"
-              />
+              {!demoMode && (
+                <NeuronRefreshButton 
+                  onRefresh={fetchBookings}
+                  label="Refresh bookings"
+                />
+              )}
               <button
                 onClick={() => setShowCreateModal(true)}
                 style={{
@@ -425,7 +467,7 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
 
         {/* Table */}
         <div style={{ padding: "0 48px 48px 48px" }}>
-          {isLoading ? (
+          {tableIsLoading ? (
             <div className="mt-2">
               <SkeletonTable rows={10} cols={6} />
             </div>
@@ -477,16 +519,29 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
                     <th className="text-left py-3 px-4 text-[#667085] font-semibold text-xs uppercase tracking-wide">
                       Created
                     </th>
-                    <th className="text-center py-3 px-4 text-[#667085] font-semibold text-xs uppercase tracking-wide" style={{ width: "80px" }}>
-                      Actions
-                    </th>
+                    {!demoMode && (
+                      <th className="text-center py-3 px-4 text-[#667085] font-semibold text-xs uppercase tracking-wide" style={{ width: "80px" }}>
+                        Actions
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredBookings.map((booking, index) => (
                     <tr
                       key={`${booking.bookingId}-${index}`}
+                      data-demo-target={
+                        (booking.bookingId === highlightedBookingId || booking.id === highlightedBookingId)
+                          ? rowTargetId
+                          : undefined
+                      }
                       className="border-b border-[#12332B]/5 hover:bg-[#0F766E]/5 transition-colors cursor-pointer"
+                      style={{
+                        backgroundColor:
+                          booking.bookingId === highlightedBookingId || booking.id === highlightedBookingId
+                            ? "#ECFDF3"
+                            : undefined,
+                      }}
                       onClick={() => onSelectBooking(booking)}
                     >
                       <td className="py-4 px-4">
@@ -571,36 +626,38 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
                           {new Date(booking.createdAt).toLocaleDateString()}
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-center">
-                        <button
-                          onClick={(e) => handleDeleteBooking(booking.bookingId, e)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "4px",
-                            padding: "6px 12px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            border: "1px solid #FCA5A5",
-                            borderRadius: "6px",
-                            background: "white",
-                            color: "#DC2626",
-                            cursor: "pointer",
-                            transition: "all 150ms"
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#DC2626";
-                            e.currentTarget.style.color = "white";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "white";
-                            e.currentTarget.style.color = "#DC2626";
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
+                      {!demoMode && (
+                        <td className="py-4 px-4 text-center">
+                          <button
+                            onClick={(e) => handleDeleteBooking(booking.bookingId, e)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "4px",
+                              padding: "6px 12px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              border: "1px solid #FCA5A5",
+                              borderRadius: "6px",
+                              background: "white",
+                              color: "#DC2626",
+                              cursor: "pointer",
+                              transition: "all 150ms"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#DC2626";
+                              e.currentTarget.style.color = "white";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "white";
+                              e.currentTarget.style.color = "#DC2626";
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -616,6 +673,7 @@ export function ForwardingBookings({ onSelectBooking, currentUser, pendingBookin
           onClose={() => setShowCreateModal(false)}
           onBookingCreated={handleBookingCreated}
           currentUser={currentUser}
+          {...createPanelProps}
         />
       )}
     </>

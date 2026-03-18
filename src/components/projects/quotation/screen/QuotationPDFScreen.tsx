@@ -15,13 +15,25 @@ interface QuotationPDFScreenProps {
   onSave: (data: any) => Promise<void>;
   currentUser?: { name: string; email: string; } | null;
   isEmbedded?: boolean;
+  primaryActionLabel?: string;
+  onPrimaryAction?: () => void;
+  primaryActionButtonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 // A4 Dimensions in pixels at 96 DPI
 const A4_WIDTH_PX = 794; // 210mm
 const A4_HEIGHT_PX = 1123; // 297mm
 
-export function QuotationPDFScreen({ project, onClose, onSave, currentUser, isEmbedded = false }: QuotationPDFScreenProps) {
+export function QuotationPDFScreen({
+  project,
+  onClose,
+  onSave,
+  currentUser,
+  isEmbedded = false,
+  primaryActionLabel,
+  onPrimaryAction,
+  primaryActionButtonProps,
+}: QuotationPDFScreenProps) {
   const { options, updateSignatory, toggleDisplay, setCustomNotes } = useQuotationDocumentState(project, currentUser);
   const [isSaving, setIsSaving] = useState(false);
   const [scale, setScale] = useState(0.85);
@@ -231,11 +243,12 @@ export function QuotationPDFScreen({ project, onClose, onSave, currentUser, isEm
                   </button>
                   
                   <button 
-                    onClick={handlePrint}
+                    onClick={onPrimaryAction || handlePrint}
                     className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-white bg-[#0F766E] rounded-lg hover:bg-[#0D625D] hover:shadow-md transition-all shadow-sm"
+                    {...primaryActionButtonProps}
                   >
                     <Printer size={18} />
-                    Print PDF
+                    {primaryActionLabel || "Print PDF"}
                   </button>
             </div>
         </div>

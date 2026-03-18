@@ -152,9 +152,38 @@ export function ChargeExpenseMatrix() {
       ]);
 
       if (!lineItems || !catalogItems) {
-        setData({ columns: [], rows: [] });
+        setData({
+          columns: [],
+          rows: [],
+          totals: {},
+          meta: {
+            total_bookings: 0,
+            total_line_items: 0,
+            unlinked_count: 0,
+            linked_count: 0,
+            linked_percentage: 0,
+            period,
+            service_type: serviceType,
+            view,
+          },
+        });
         return;
       }
+
+      const periodStart = new Date(`${period}-01T00:00:00`);
+      const periodEnd = new Date(periodStart);
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+      const scopedLineItems = lineItems.filter((lineItem: any) => {
+        const createdAt = lineItem.created_at ? new Date(lineItem.created_at) : null;
+        const inPeriod = !createdAt || (createdAt >= periodStart && createdAt < periodEnd);
+        const matchesService = serviceType === "All" || lineItem.service_type === serviceType;
+        const matchesView =
+          view === "both" ||
+          (view === "expenses" ? lineItem.charge_type === "expense" : lineItem.charge_type !== "expense");
+
+        return inPeriod && matchesService && matchesView;
+      });
 
       // Build pivot: columns = catalog items, rows = bookings
       const columns = catalogItems.map((ci: any) => ({
@@ -164,7 +193,7 @@ export function ChargeExpenseMatrix() {
 
       // Group line items by booking
       const byBooking = new Map<string, any[]>();
-      for (const li of lineItems) {
+      for (const li of scopedLineItems) {
         const key = li.booking_id || li.project_number || 'unassigned';
         if (!byBooking.has(key)) byBooking.set(key, []);
         byBooking.get(key)!.push(li);
@@ -173,15 +202,46 @@ export function ChargeExpenseMatrix() {
       const rows = Array.from(byBooking.entries()).map(([bookingId, items]) => ({
         booking_id: bookingId,
         project_number: items[0]?.project_number || bookingId,
+        service_type: items[0]?.service_type || "Unknown",
         cells: Object.fromEntries(
           columns.map((col: any) => {
             const match = items.find((li: any) => li.catalog_item_id === col.catalog_item_id);
-            return [col.catalog_item_id, match ? match.amount || 0 : null];
+            return [
+              col.catalog_item_id,
+              {
+                amount: match?.amount || 0,
+                currency: match?.currency || "PHP",
+              },
+            ];
           })
         ),
       }));
 
-      setData({ columns, rows });
+      const totals = Object.fromEntries(
+        columns.map((col: any) => [
+          col.catalog_item_id,
+          rows.reduce((sum, row) => sum + (row.cells[col.catalog_item_id]?.amount || 0), 0),
+        ])
+      );
+
+      const linkedCount = scopedLineItems.filter((lineItem: any) => !!lineItem.catalog_item_id).length;
+      const unlinkedCount = scopedLineItems.length - linkedCount;
+
+      setData({
+        columns,
+        rows,
+        totals,
+        meta: {
+          total_bookings: rows.length,
+          total_line_items: scopedLineItems.length,
+          unlinked_count: unlinkedCount,
+          linked_count: linkedCount,
+          linked_percentage: scopedLineItems.length === 0 ? 0 : Math.round((linkedCount / scopedLineItems.length) * 100),
+          period,
+          service_type: serviceType,
+          view,
+        },
+      });
     } catch (err) {
       console.error("Matrix fetch error:", err);
       setError(String(err));

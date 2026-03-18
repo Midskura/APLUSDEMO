@@ -28,9 +28,17 @@ interface CreateQuotationMenuProps {
   entityWord?: string;
   /** Optional: override the button styling variant */
   variant?: "primary-green" | "primary-outline";
+  directType?: QuotationType;
+  triggerButtonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
-export function CreateQuotationMenu({ onSelect, buttonText, entityWord = "Quotation" }: CreateQuotationMenuProps) {
+export function CreateQuotationMenu({
+  onSelect,
+  buttonText,
+  entityWord = "Quotation",
+  directType,
+  triggerButtonProps,
+}: CreateQuotationMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -50,7 +58,13 @@ export function CreateQuotationMenu({ onSelect, buttonText, entityWord = "Quotat
       {/* Trigger Button */}
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (directType) {
+            onSelect(directType);
+            return;
+          }
+          setOpen(!open);
+        }}
         style={{
           display: "flex",
           alignItems: "center",
@@ -72,21 +86,24 @@ export function CreateQuotationMenu({ onSelect, buttonText, entityWord = "Quotat
         onMouseLeave={(e) => {
           e.currentTarget.style.backgroundColor = "var(--neuron-brand-green)";
         }}
+        {...triggerButtonProps}
       >
         <Plus size={18} />
         {buttonText}
-        <ChevronDown
-          size={16}
-          style={{
-            marginLeft: "2px",
-            transition: "transform 0.2s ease",
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-          }}
-        />
+        {!directType && (
+          <ChevronDown
+            size={16}
+            style={{
+              marginLeft: "2px",
+              transition: "transform 0.2s ease",
+              transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          />
+        )}
       </button>
 
       {/* Dropdown Menu — Figma-matched */}
-      {open && (
+      {open && !directType && (
         <div
           style={{
             position: "absolute",

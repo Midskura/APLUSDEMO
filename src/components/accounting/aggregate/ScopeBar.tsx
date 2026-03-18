@@ -12,6 +12,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Calendar, ChevronDown, Check } from "lucide-react";
 import { CustomDatePicker } from "../../common/CustomDatePicker";
 import type { DateScope, ScopePreset } from "./types";
@@ -22,6 +23,7 @@ interface ScopeBarProps {
   onScopeChange: (scope: DateScope) => void;
   /** When true, renders with its own border (for standalone use outside toolbar) */
   standalone?: boolean;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 const PRESETS: { value: ScopePreset; label: string; shortLabel: string }[] = [
@@ -44,21 +46,52 @@ const toInputValue = (d: Date) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
+export function ScopeBar({ scope, onScopeChange, standalone, buttonProps }: ScopeBarProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+  const interactionGroupId = (buttonProps as Record<string, unknown> | undefined)?.["data-demo-interaction-group"] as string | undefined;
 
   // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        ref.current &&
+        !ref.current.contains(target) &&
+        (!menuRef.current || !menuRef.current.contains(target))
+      ) {
         setOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !interactionGroupId || !buttonRef.current) {
+      if (!interactionGroupId) setMenuPos(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 6, left: rect.left, minWidth: rect.width });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [interactionGroupId, open]);
 
   const handlePresetClick = (preset: ScopePreset) => {
     onScopeChange(createDateScope(preset));
@@ -86,6 +119,7 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
       {/* Preset dropdown */}
       <div className="relative">
         <button
+          ref={buttonRef}
           onClick={() => setOpen(!open)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors hover:bg-gray-50"
           style={{
@@ -93,6 +127,7 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
             color: "#12332B",
             backgroundColor: open ? "#F0FDFA" : standalone ? "#FFFFFF" : "transparent",
           }}
+          {...buttonProps}
         >
           <Calendar size={14} style={{ color: open ? "#0F766E" : "#667085" }} />
           <span>{getPresetLabel(scope.preset)}</span>
@@ -104,12 +139,20 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
         </button>
 
         {/* Dropdown popover */}
-        {open && (
+        {open && (() => {
+          const dropdownContent = (
           <div
-            className="absolute top-full left-0 mt-1.5 z-50 rounded-lg shadow-lg py-1 min-w-[220px]"
+            ref={menuRef}
+            data-demo-interaction-group={interactionGroupId}
+            className="rounded-lg shadow-lg py-1 min-w-[220px]"
             style={{
+              position: interactionGroupId ? "fixed" : "absolute",
+              top: interactionGroupId ? menuPos?.top : "calc(100% + 6px)",
+              left: interactionGroupId ? menuPos?.left : 0,
               border: "1px solid var(--neuron-ui-border)",
               backgroundColor: "#FFFFFF",
+              zIndex: interactionGroupId ? 9999 : 50,
+              minWidth: interactionGroupId ? Math.max(menuPos?.minWidth || 220, 220) : undefined,
             }}
           >
             {PRESETS.map((p) => {
@@ -134,7 +177,14 @@ export function ScopeBar({ scope, onScopeChange, standalone }: ScopeBarProps) {
               );
             })}
           </div>
-        )}
+          );
+
+          if (interactionGroupId && menuPos) {
+            return createPortal(dropdownContent, document.body);
+          }
+
+          return dropdownContent;
+        })()}
       </div>
 
       {/* Date range pickers — always visible, always reflect scope.from / scope.to */}

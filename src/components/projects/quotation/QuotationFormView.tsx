@@ -5,9 +5,21 @@ interface QuotationFormViewProps {
   project: Project;
   onSave?: (data: any) => Promise<void>;
   onAmend?: () => void;
+  onStateSnapshotChange?: (snapshot: any) => void;
+  allowForwardingModeEditInViewMode?: boolean;
+  demoTargetIds?: {
+    forwardingMode?: string;
+  };
 }
 
-export function QuotationFormView({ project, onSave, onAmend }: QuotationFormViewProps) {
+export function QuotationFormView({
+  project,
+  onSave,
+  onAmend,
+  onStateSnapshotChange,
+  allowForwardingModeEditInViewMode = false,
+  demoTargetIds,
+}: QuotationFormViewProps) {
   // Construct initialData from project to match QuotationBuilder format
   const initialData: Partial<QuotationNew> = {
       ...project.quotation,
@@ -50,6 +62,9 @@ export function QuotationFormView({ project, onSave, onAmend }: QuotationFormVie
           viewMode={true} 
           hideHeader={true} 
           onAmend={onAmend}
+          onStateSnapshotChange={onStateSnapshotChange}
+          allowForwardingModeEditInViewMode={allowForwardingModeEditInViewMode}
+          demoTargetIds={{ forwardingMode: demoTargetIds?.forwardingMode }}
       />
     </div>
   );

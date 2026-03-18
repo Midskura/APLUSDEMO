@@ -1,7 +1,8 @@
 import type { Customer } from "../../types/bd";
 import { supabase } from "../../utils/supabase/client";
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Building2, ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Search, Building2, ChevronDown } from "lucide-react";
 
 interface CompanyAutocompleteProps {
   value: string; // company_name
@@ -9,6 +10,9 @@ interface CompanyAutocompleteProps {
   onChange: (companyName: string, companyId: string) => void;
   placeholder?: string;
   error?: string;
+  demoOptions?: Customer[];
+  interactionGroupId?: string;
+  renderMenuInPortal?: boolean;
 }
 
 export function CompanyAutocomplete({
@@ -17,6 +21,9 @@ export function CompanyAutocomplete({
   onChange,
   placeholder = "Select company...",
   error,
+  demoOptions,
+  interactionGroupId,
+  renderMenuInPortal = false,
 }: CompanyAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -25,9 +32,29 @@ export function CompanyAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const effectiveCustomers = demoOptions || customers;
+  const filteredCustomers = searchQuery.trim()
+    ? effectiveCustomers.filter((customer) =>
+        (customer.name || "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : effectiveCustomers;
+
+  useEffect(() => {
+    setHighlightedIndex((prev) => {
+      if (filteredCustomers.length === 0) return 0;
+      return Math.min(prev, filteredCustomers.length - 1);
+    });
+  }, [filteredCustomers.length, searchQuery]);
 
   // Fetch customers from backend
   const fetchCustomers = async (search: string = "") => {
+    if (demoOptions) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       let query = supabase.from('customers').select('*');
@@ -47,25 +74,30 @@ export function CompanyAutocomplete({
 
   // Fetch customers when dropdown opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !demoOptions) {
       fetchCustomers(searchQuery);
     }
-  }, [isOpen]);
+  }, [demoOptions, isOpen]);
 
   // Debounced search
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !demoOptions) {
       const timer = setTimeout(() => {
         fetchCustomers(searchQuery);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [searchQuery]);
+  }, [demoOptions, isOpen, searchQuery]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(target) &&
+        (!menuRef.current || !menuRef.current.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -73,6 +105,32 @@ export function CompanyAutocomplete({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || !renderMenuInPortal || !wrapperRef.current) {
+      if (!renderMenuInPortal) setMenuPos(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!wrapperRef.current) return;
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isOpen, renderMenuInPortal]);
 
   const handleSelect = (customer: Customer) => {
     // Backend uses 'name' field consistently
@@ -96,7 +154,7 @@ export function CompanyAutocomplete({
       case "ArrowDown":
         e.preventDefault();
         setHighlightedIndex((prev) =>
-          prev < customers.length - 1 ? prev + 1 : prev
+          prev < filteredCustomers.length - 1 ? prev + 1 : prev
         );
         break;
       case "ArrowUp":
@@ -105,8 +163,8 @@ export function CompanyAutocomplete({
         break;
       case "Enter":
         e.preventDefault();
-        if (customers[highlightedIndex]) {
-          handleSelect(customers[highlightedIndex]);
+        if (filteredCustomers[highlightedIndex]) {
+          handleSelect(filteredCustomers[highlightedIndex]);
         }
         break;
       case "Escape":
@@ -168,20 +226,24 @@ export function CompanyAutocomplete({
       )}
 
       {/* Dropdown */}
-      {isOpen && (
+      {isOpen && (() => {
+        const dropdownContent = (
         <div
+          ref={menuRef}
+          data-demo-interaction-group={interactionGroupId}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            right: 0,
+            position: renderMenuInPortal ? "fixed" : "absolute",
+            top: renderMenuInPortal ? menuPos?.top : "calc(100% + 4px)",
+            left: renderMenuInPortal ? menuPos?.left : 0,
+            right: renderMenuInPortal ? undefined : 0,
+            width: renderMenuInPortal ? menuPos?.width : undefined,
             backgroundColor: "white",
             border: "1px solid var(--neuron-ui-border)",
             borderRadius: "8px",
             boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
             maxHeight: "320px",
             overflow: "auto",
-            zIndex: 1000,
+            zIndex: renderMenuInPortal ? 9999 : 1000,
           }}
         >
           {/* Search Header */}
@@ -210,6 +272,7 @@ export function CompanyAutocomplete({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Search companies..."
                 autoFocus
                 style={{
@@ -245,7 +308,7 @@ export function CompanyAutocomplete({
           )}
 
           {/* Empty State */}
-          {!isLoading && customers.length === 0 && (
+          {!isLoading && filteredCustomers.length === 0 && (
             <div
               style={{
                 padding: "24px 16px",
@@ -268,7 +331,7 @@ export function CompanyAutocomplete({
 
           {/* Customer List - NAMES ONLY */}
           {!isLoading &&
-            customers.map((customer, index) => (
+            filteredCustomers.map((customer, index) => (
               <div
                 key={customer.id}
                 onClick={() => handleSelect(customer)}
@@ -279,7 +342,7 @@ export function CompanyAutocomplete({
                   backgroundColor:
                     highlightedIndex === index ? "#F3F4F6" : "white",
                   borderBottom:
-                    index < customers.length - 1
+                    index < filteredCustomers.length - 1
                       ? "1px solid #F3F4F6"
                       : "none",
                   transition: "background-color 0.1s",
@@ -297,7 +360,14 @@ export function CompanyAutocomplete({
               </div>
             ))}
         </div>
-      )}
+        );
+
+        if (renderMenuInPortal && menuPos) {
+          return createPortal(dropdownContent, document.body);
+        }
+
+        return dropdownContent;
+      })()}
     </div>
   );
 }

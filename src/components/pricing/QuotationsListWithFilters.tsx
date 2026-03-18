@@ -36,6 +36,10 @@ interface QuotationsListWithFiltersProps {
   isLoading?: boolean;
   userDepartment?: "Business Development" | "Pricing";
   onRefresh?: () => void;
+  createDirectType?: QuotationType;
+  createButtonTargetId?: string;
+  highlightedQuotationId?: string | null;
+  rowTargetId?: string;
 }
 
 interface QuotationTableRowProps {
@@ -45,9 +49,20 @@ interface QuotationTableRowProps {
   onItemClick: (item: QuotationNew) => void;
   gridTemplateColumns: string;
   showStatus?: boolean;
+  isHighlighted?: boolean;
+  rowTargetId?: string;
 }
 
-function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateColumns, showStatus }: QuotationTableRowProps) {
+function QuotationTableRow({
+  item,
+  index,
+  totalItems,
+  onItemClick,
+  gridTemplateColumns,
+  showStatus,
+  isHighlighted = false,
+  rowTargetId,
+}: QuotationTableRowProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showNameTooltip, setShowNameTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
@@ -92,21 +107,23 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
   return (
     <div
       className="grid transition-colors cursor-pointer"
+      data-demo-target={rowTargetId}
       style={{ 
         gridTemplateColumns: gridTemplateColumns,
         gap: "12px",
         padding: "10px 16px",
         borderBottom: "none",
-        backgroundColor: index % 2 === 0 ? "white" : "#FAFBFC",
+        backgroundColor: isHighlighted ? "#ECFDF3" : index % 2 === 0 ? "white" : "#FAFBFC",
         position: "relative",
+        boxShadow: isHighlighted ? "inset 0 0 0 1px rgba(15, 118, 110, 0.18)" : undefined,
         ...getQuotationTypeAccentStyle(item.quotation_type),
       }}
       onClick={() => onItemClick(item)}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "#F3F4F6";
+        e.currentTarget.style.backgroundColor = isHighlighted ? "#DFF7EA" : "#F3F4F6";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = index % 2 === 0 ? "white" : "#FAFBFC";
+        e.currentTarget.style.backgroundColor = isHighlighted ? "#ECFDF3" : index % 2 === 0 ? "white" : "#FAFBFC";
       }}
     >
       {/* Icon — type-aware (Project vs Contract) */}
@@ -223,7 +240,18 @@ function QuotationTableRow({ item, index, totalItems, onItemClick, gridTemplateC
   );
 }
 
-export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quotations, isLoading, userDepartment, onRefresh }: QuotationsListWithFiltersProps) {
+export function QuotationsListWithFilters({
+  onViewItem,
+  onCreateQuotation,
+  quotations,
+  isLoading,
+  userDepartment,
+  onRefresh,
+  createDirectType,
+  createButtonTargetId,
+  highlightedQuotationId,
+  rowTargetId,
+}: QuotationsListWithFiltersProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -468,6 +496,8 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
             onSelect={onCreateQuotation}
             buttonText={buttonText}
             entityWord={entityWord}
+            directType={createDirectType}
+            triggerButtonProps={{ "data-demo-target": createButtonTargetId }}
           />
         </div>
 
@@ -839,6 +869,8 @@ export function QuotationsListWithFilters({ onViewItem, onCreateQuotation, quota
                 onItemClick={onViewItem}
                 gridTemplateColumns={gridTemplateColumns}
                 showStatus={showStatus}
+                isHighlighted={item.id === highlightedQuotationId}
+                rowTargetId={item.id === highlightedQuotationId ? rowTargetId : undefined}
               />
             ))}
           </div>

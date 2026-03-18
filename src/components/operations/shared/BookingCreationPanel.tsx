@@ -40,6 +40,7 @@ interface BookingCreationPanelProps {
   submitIcon?: React.ReactNode;
   /** Form fields — rendered inside the scrollable form area */
   children: React.ReactNode;
+  submitButtonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 export function BookingCreationPanel({
@@ -55,6 +56,7 @@ export function BookingCreationPanel({
   submitLabel = "Create Booking",
   submitIcon,
   children,
+  submitButtonProps,
 }: BookingCreationPanelProps) {
   // Build the custom header ReactNode for SidePanel
   const headerContent = (
@@ -145,6 +147,7 @@ export function BookingCreationPanel({
             e.currentTarget.style.backgroundColor = "#0F766E";
           }
         }}
+        {...submitButtonProps}
       >
         {submitIcon}
         {isSubmitting ? "Creating..." : submitLabel}

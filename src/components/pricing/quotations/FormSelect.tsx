@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
 interface FormSelectOption {
@@ -12,16 +13,26 @@ interface FormSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
-export function FormSelect({ value, options, onChange, placeholder = "Select...", disabled = false }: FormSelectProps) {
+export function FormSelect({ value, options, onChange, placeholder = "Select...", disabled = false, buttonProps }: FormSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+  const interactionGroupId = (buttonProps as Record<string, unknown> | undefined)?.["data-demo-interaction-group"] as string | undefined;
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target) &&
+        (!menuRef.current || !menuRef.current.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -30,12 +41,35 @@ export function FormSelect({ value, options, onChange, placeholder = "Select..."
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen || !interactionGroupId || !buttonRef.current) {
+      if (!interactionGroupId) setMenuPos(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, left: rect.left, minWidth: rect.width });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [interactionGroupId, isOpen]);
+
   const selectedOption = options.find(opt => opt.value === value);
   const displayValue = selectedOption?.label || placeholder;
 
   return (
     <div ref={dropdownRef} style={{ position: "relative", width: "100%" }}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         style={{
@@ -66,6 +100,7 @@ export function FormSelect({ value, options, onChange, placeholder = "Select..."
           }
         }}
         disabled={disabled}
+        {...buttonProps}
       >
         <span>{displayValue}</span>
         <ChevronDown 
@@ -81,18 +116,22 @@ export function FormSelect({ value, options, onChange, placeholder = "Select..."
       </button>
 
       {/* Dropdown Menu */}
-      {isOpen && (
+      {isOpen && (() => {
+        const menu = (
         <div
+          ref={menuRef}
+          data-demo-interaction-group={interactionGroupId}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            right: 0,
+            position: interactionGroupId ? "fixed" : "absolute",
+            top: interactionGroupId ? menuPos?.top : "calc(100% + 4px)",
+            left: interactionGroupId ? menuPos?.left : 0,
+            right: interactionGroupId ? undefined : 0,
+            minWidth: interactionGroupId ? menuPos?.minWidth : undefined,
             backgroundColor: "white",
             border: "1px solid var(--neuron-ui-border)",
             borderRadius: "6px",
             boxShadow: "0px 4px 6px -2px rgba(16, 24, 40, 0.03), 0px 12px 16px -4px rgba(16, 24, 40, 0.08)",
-            zIndex: 1000,
+            zIndex: interactionGroupId ? 9999 : 1000,
             maxHeight: "240px",
             overflowY: "auto"
           }}
@@ -130,7 +169,14 @@ export function FormSelect({ value, options, onChange, placeholder = "Select..."
             </button>
           ))}
         </div>
-      )}
+        );
+
+        if (interactionGroupId && menuPos) {
+          return createPortal(menu, document.body);
+        }
+
+        return menu;
+      })()}
     </div>
   );
 }

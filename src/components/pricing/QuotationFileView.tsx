@@ -25,11 +25,41 @@ interface QuotationFileViewProps {
   onConvertToProject?: (projectId: string) => void;
   onConvertToContract?: (quotationId: string) => void;
   currentUser?: { id: string; name: string; email: string; department: string } | null;
+  onForwardingStateSnapshotChange?: (snapshot: any) => void;
+  allowForwardingModeEditInViewMode?: boolean;
+  onViewModeChange?: (mode: "form" | "pdf") => void;
+  pdfPrimaryActionLabel?: string;
+  onPdfPrimaryAction?: () => void;
+  demoTargetIds?: {
+    forwardingMode?: string;
+    pdfToggleGroup?: string;
+    pdfView?: string;
+    pdfPrimaryAction?: string;
+  };
 }
 
 type TabType = "details" | "comments";
 
-export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, onAcceptQuotation, onDelete, onUpdate, onDuplicate, onCreateTicket, onConvertToProject, onConvertToContract, currentUser }: QuotationFileViewProps) {
+export function QuotationFileView({
+  quotation,
+  onBack,
+  onEdit,
+  userDepartment,
+  onAcceptQuotation,
+  onDelete,
+  onUpdate,
+  onDuplicate,
+  onCreateTicket,
+  onConvertToProject,
+  onConvertToContract,
+  currentUser,
+  onForwardingStateSnapshotChange,
+  allowForwardingModeEditInViewMode = false,
+  onViewModeChange,
+  pdfPrimaryActionLabel,
+  onPdfPrimaryAction,
+  demoTargetIds,
+}: QuotationFileViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>("details");
   const [viewMode, setViewMode] = useState<"form" | "pdf">("form");
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
@@ -318,6 +348,11 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
     
     onUpdate(updatedQuotation);
     toast.success("Quotation updated");
+  };
+
+  const handleViewModeChange = (nextMode: "form" | "pdf") => {
+    setViewMode(nextMode);
+    onViewModeChange?.(nextMode);
   };
 
   return (
@@ -611,11 +646,17 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
              <div className="flex items-center justify-between mb-8">
                <SegmentedToggle
                    value={viewMode}
-                   onChange={setViewMode}
+                   onChange={handleViewModeChange}
                    options={[
                        { value: "form", label: "Form View", icon: <Layout size={16} /> },
                        { value: "pdf", label: "PDF View", icon: <FileText size={16} /> }
                    ]}
+                   containerProps={{
+                     "data-demo-highlight-target": demoTargetIds?.pdfToggleGroup,
+                   }}
+                   buttonPropsMap={{
+                     pdf: { "data-demo-target": demoTargetIds?.pdfView },
+                   } as any}
                />
              </div>
 
@@ -623,14 +664,22 @@ export function QuotationFileView({ quotation, onBack, onEdit, userDepartment, o
                 <div className="h-[800px] border border-gray-200 rounded-xl overflow-hidden bg-white">
                     <QuotationPDFScreen 
                         project={adaptedProject}
-                        onClose={() => setViewMode("form")}
+                        onClose={() => handleViewModeChange("form")}
                         onSave={handlePDFSave}
                         currentUser={currentUser}
                         isEmbedded={true}
+                        primaryActionLabel={pdfPrimaryActionLabel}
+                        onPrimaryAction={onPdfPrimaryAction}
+                        primaryActionButtonProps={{ "data-demo-target": demoTargetIds?.pdfPrimaryAction }}
                     />
                 </div>
              ) : (
-                <QuotationFormView project={adaptedProject} />
+                <QuotationFormView
+                  project={adaptedProject}
+                  onStateSnapshotChange={onForwardingStateSnapshotChange}
+                  allowForwardingModeEditInViewMode={allowForwardingModeEditInViewMode}
+                  demoTargetIds={{ forwardingMode: demoTargetIds?.forwardingMode }}
+                />
              )}
            </div>
         ) : (

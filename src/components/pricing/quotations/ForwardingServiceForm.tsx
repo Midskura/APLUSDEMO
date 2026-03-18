@@ -47,15 +47,31 @@ interface ForwardingServiceFormProps {
   movement?: "IMPORT" | "EXPORT";
   contractMode?: boolean; // When true, show only scope fields, hide shipment-specific
   headerToolbar?: ReactNode; // Optional toolbar rendered right-aligned in header row
+  allowModeEditInViewMode?: boolean;
+  demoTargetIds?: {
+    aodPod?: string;
+    mode?: string;
+  };
 }
 
-export function ForwardingServiceForm({ data, onChange, builderMode = "quotation", viewMode = false, movement = "IMPORT", contractMode = false, headerToolbar }: ForwardingServiceFormProps) {
+export function ForwardingServiceForm({
+  data,
+  onChange,
+  builderMode = "quotation",
+  viewMode = false,
+  movement = "IMPORT",
+  contractMode = false,
+  headerToolbar,
+  allowModeEditInViewMode = false,
+  demoTargetIds,
+}: ForwardingServiceFormProps) {
   const updateField = (field: keyof ForwardingFormData, value: any) => {
     onChange({ ...data, [field]: value });
   };
 
   const isExport = movement === "EXPORT";
   const incoterm = data.incoterms || "";
+  const isModeReadOnly = viewMode && !allowModeEditInViewMode;
 
   // Address Logic
   // Import: Always show Delivery Address
@@ -307,6 +323,7 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
               value={data.aodPod || ""}
               onChange={(e) => updateField("aodPod", e.target.value)}
               placeholder="Airport/Port of Discharge"
+              data-demo-target={demoTargetIds?.aodPod}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -351,7 +368,11 @@ export function ForwardingServiceForm({ data, onChange, builderMode = "quotation
               { value: "Multi-modal", label: "Multi-modal" }
             ]}
             placeholder="Select mode..."
-            disabled={viewMode}
+            disabled={isModeReadOnly}
+            buttonProps={{
+              "data-demo-target": demoTargetIds?.mode,
+              "data-demo-interaction-group": demoTargetIds?.mode,
+            }}
           />
         </div>
 

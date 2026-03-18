@@ -55,7 +55,6 @@ export function Pricing({ view = "contacts", onViewInquiry, inquiryId, currentUs
       const { data, error } = await supabase
         .from('quotations')
         .select('*')
-        .eq('department', 'pricing')
         .order('created_at', { ascending: false });
       
       if (error) throw error;

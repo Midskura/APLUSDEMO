@@ -12,6 +12,7 @@ interface StatusSelectorProps {
   readOnly?: boolean;
   className?: string;
   showIcon?: boolean;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
 export function StatusSelector({ 
@@ -19,7 +20,8 @@ export function StatusSelector({
   onUpdateStatus, 
   readOnly = false,
   className,
-  showIcon = true
+  showIcon = true,
+  buttonProps,
 }: StatusSelectorProps) {
   const style = getBookingStatusStyles(status);
   const Icon = style.icon;
@@ -86,6 +88,7 @@ export function StatusSelector({
         color: style.text,
         border: style.borderColor ? `1px solid ${style.borderColor}` : undefined
       }}
+      buttonProps={buttonProps}
     />
   );
 }

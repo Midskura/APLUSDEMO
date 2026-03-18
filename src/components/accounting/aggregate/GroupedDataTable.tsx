@@ -1,6 +1,6 @@
 /**
- * GroupedDataTable — Collapsible grouped table for aggregate financial views.
- * 
+ * GroupedDataTable â€” Collapsible grouped table for aggregate financial views.
+ *
  * Renders groups with expandable headers (label, count badge, subtotal),
  * and paginated detail rows within each group.
  */
@@ -10,7 +10,7 @@ import { ChevronRight, ChevronDown, ChevronsUpDown, Download } from "lucide-reac
 import type { GroupedItems } from "./types";
 import { formatCurrencyFull } from "./types";
 
-// ── Column Definition (mirrors DataTable's ColumnDef but simplified) ──
+// â”€â”€ Column Definition (mirrors DataTable's ColumnDef but simplified) â”€â”€
 
 export interface AggColumnDef<T> {
   header: string;
@@ -20,7 +20,7 @@ export interface AggColumnDef<T> {
   cell?: (item: T) => React.ReactNode;
 }
 
-// ── Props ──
+// â”€â”€ Props â”€â”€
 
 interface GroupedDataTableProps<T> {
   /** Grouped data */
@@ -35,6 +35,12 @@ interface GroupedDataTableProps<T> {
   emptyMessage?: string;
   /** Callback when a detail row is clicked */
   onRowClick?: (item: T) => void;
+  /** Optional resolver for stable row ids */
+  getRowId?: (item: T) => string | number | undefined;
+  /** Optional row id to visually and interactively target */
+  highlightedRowId?: string | number | null;
+  /** Demo target id applied to the highlighted row */
+  rowTargetId?: string;
   /** Label for the amount field in CSV export (defaults to "Amount") */
   exportLabel?: string;
   /** Tab name for CSV file naming */
@@ -50,6 +56,9 @@ export function GroupedDataTable<T extends { id?: string | number }>({
   pageSize = ROWS_PER_PAGE,
   emptyMessage = "No records found for the current scope and filters.",
   onRowClick,
+  getRowId,
+  highlightedRowId = null,
+  rowTargetId,
   exportLabel,
   exportFileName = "financials",
 }: GroupedDataTableProps<T>) {
@@ -92,7 +101,7 @@ export function GroupedDataTable<T extends { id?: string | number }>({
     setGroupPages((prev) => ({ ...prev, [key]: page }));
   };
 
-  // Grand total across all groups (must be before early returns — Rules of Hooks)
+  // Grand total across all groups (must be before early returns â€” Rules of Hooks)
   const grandTotal = useMemo(
     () => groups.reduce((sum, g) => sum + g.subtotal, 0),
     [groups]
@@ -286,49 +295,59 @@ export function GroupedDataTable<T extends { id?: string | number }>({
             {/* Detail Rows (only if expanded) */}
             {!isCollapsed && (
               <>
-                {pagedItems.map((item, rowIdx) => (
-                  <div
-                    key={(item as any).id || `${group.key}-${rowIdx}`}
-                    onClick={() => onRowClick?.(item)}
-                    className="flex items-center px-4 py-2 transition-colors"
-                    style={{
-                      borderBottom: "1px solid var(--neuron-ui-divider)",
-                      backgroundColor: "var(--neuron-bg-elevated)",
-                      cursor: onRowClick ? "pointer" : "default",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = "var(--neuron-state-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = "var(--neuron-bg-elevated)";
-                    }}
-                  >
-                    {/* Indent spacer (matches header chevron + gap for column alignment) */}
-                    <div className="shrink-0" style={{ width: "26px" }} />
+                {pagedItems.map((item, rowIdx) => {
+                  const resolvedRowId = getRowId ? getRowId(item) : (item as any).id;
+                  const isHighlighted = highlightedRowId !== null && resolvedRowId === highlightedRowId;
+                  const defaultBackground = isHighlighted ? "#F1FBF7" : "var(--neuron-bg-elevated)";
+                  const hoverBackground = isHighlighted ? "#ECF9F4" : "var(--neuron-state-hover)";
 
-                    {/* Columns */}
-                    <div className="flex items-center flex-1 min-w-0">
-                      {columns.map((col, colIdx) => (
-                        <div
-                          key={colIdx}
-                          className="px-2 text-[12px] truncate min-w-0"
-                          style={{
-                            color: "var(--neuron-ink-secondary)",
-                            width: col.width || "auto",
-                            flex: col.width ? "none" : 1,
-                            textAlign: col.align || "left",
-                          }}
-                        >
-                          {col.cell
-                            ? col.cell(item)
-                            : col.accessorKey
-                            ? String((item as any)[col.accessorKey] ?? "—")
-                            : "—"}
-                        </div>
-                      ))}
+                  return (
+                    <div
+                      key={resolvedRowId || `${group.key}-${rowIdx}`}
+                      onClick={() => onRowClick?.(item)}
+                      data-demo-target={isHighlighted ? rowTargetId : undefined}
+                      data-demo-highlight-target={isHighlighted ? rowTargetId : undefined}
+                      className="flex items-center px-4 py-2 transition-colors"
+                      style={{
+                        borderBottom: "1px solid var(--neuron-ui-divider)",
+                        backgroundColor: defaultBackground,
+                        cursor: onRowClick ? "pointer" : "default",
+                        boxShadow: isHighlighted ? "inset 4px 0 0 #0F766E" : undefined,
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = hoverBackground;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = defaultBackground;
+                      }}
+                    >
+                      {/* Indent spacer (matches header chevron + gap for column alignment) */}
+                      <div className="shrink-0" style={{ width: "26px" }} />
+
+                      {/* Columns */}
+                      <div className="flex items-center flex-1 min-w-0">
+                        {columns.map((col, colIdx) => (
+                          <div
+                            key={colIdx}
+                            className="px-2 text-[12px] truncate min-w-0"
+                            style={{
+                              color: "var(--neuron-ink-secondary)",
+                              width: col.width || "auto",
+                              flex: col.width ? "none" : 1,
+                              textAlign: col.align || "left",
+                            }}
+                          >
+                            {col.cell
+                              ? col.cell(item)
+                              : col.accessorKey
+                              ? String((item as any)[col.accessorKey] ?? "â€”")
+                              : "â€”"}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* Pagination (only if more than 1 page) */}
                 {totalPages > 1 && (
@@ -340,7 +359,7 @@ export function GroupedDataTable<T extends { id?: string | number }>({
                     }}
                   >
                     <span className="text-[11px]" style={{ color: "var(--neuron-ink-muted)" }}>
-                      Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, group.items.length)} of {group.items.length}
+                      Showing {page * pageSize + 1}â€“{Math.min((page + 1) * pageSize, group.items.length)} of {group.items.length}
                     </span>
                     <div className="flex items-center gap-1">
                       <button

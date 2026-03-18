@@ -27,6 +27,23 @@ interface CreateForwardingBookingPanelProps {
   source?: "operations" | "pricing"; // NEW: Indicates where the panel is being used
   customerId?: string; // NEW: For team assignment
   serviceType?: string; // NEW: For team assignment
+  demoMode?: boolean;
+  demoPrefill?: {
+    bookingNumber?: string;
+    customerName?: string;
+    movement?: "IMPORT" | "EXPORT";
+    quotationReferenceNumber?: string;
+    projectNumber?: string;
+    aodPod?: string;
+    aolPol?: string;
+    mode?: "FCL" | "LCL" | "AIR";
+  };
+  onDemoFieldChange?: (fields: { eta: string }) => void;
+  onDemoCreateBooking?: (booking: ForwardingBooking) => void;
+  demoTargetIds?: {
+    eta?: string;
+    submit?: string;
+  };
 }
 
 
@@ -39,6 +56,11 @@ export function CreateForwardingBookingPanel({
   source = "operations",
   customerId,
   serviceType = "Forwarding",
+  demoMode = false,
+  demoPrefill,
+  onDemoFieldChange,
+  onDemoCreateBooking,
+  demoTargetIds,
 }: CreateForwardingBookingPanelProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingNumber, setBookingNumber] = useState("");
@@ -124,20 +146,26 @@ export function CreateForwardingBookingPanel({
 
   // Apply prefill data when component mounts or prefillData changes
   useEffect(() => {
-    if (prefillData && source === "pricing") {
+    if ((prefillData && source === "pricing") || (demoMode && demoPrefill)) {
+      const effectivePrefill = demoMode ? demoPrefill : prefillData;
       // Auto-populate fields from prefillData
-      if (prefillData.customerName) setCustomerName(prefillData.customerName);
-      if (prefillData.movement) setMovement(prefillData.movement);
-      if (prefillData.projectNumber) setProjectNumber(prefillData.projectNumber);
-      if (prefillData.quotationReferenceNumber) setQuotationReferenceNumber(prefillData.quotationReferenceNumber);
-      if (prefillData.commodityDescription) setCommodityDescription(prefillData.commodityDescription);
-      if (prefillData.deliveryAddress) setDeliveryAddress(prefillData.deliveryAddress);
-      if (prefillData.aolPol) setAolPol(prefillData.aolPol);
-      if (prefillData.aodPod) setAodPod(prefillData.aodPod);
-      if (prefillData.cargoType) setCargoType(prefillData.cargoType);
-      if (prefillData.mode) setMode(prefillData.mode as "FCL" | "LCL" | "AIR");
+      if (effectivePrefill?.bookingNumber) setBookingNumber(effectivePrefill.bookingNumber);
+      if (effectivePrefill?.customerName) setCustomerName(effectivePrefill.customerName);
+      if (effectivePrefill?.movement) setMovement(effectivePrefill.movement);
+      if (effectivePrefill?.projectNumber) setProjectNumber(effectivePrefill.projectNumber);
+      if (effectivePrefill?.quotationReferenceNumber) setQuotationReferenceNumber(effectivePrefill.quotationReferenceNumber);
+      if ((effectivePrefill as any)?.commodityDescription) setCommodityDescription((effectivePrefill as any).commodityDescription);
+      if ((effectivePrefill as any)?.deliveryAddress) setDeliveryAddress((effectivePrefill as any).deliveryAddress);
+      if (effectivePrefill?.aolPol) setAolPol(effectivePrefill.aolPol);
+      if (effectivePrefill?.aodPod) setAodPod(effectivePrefill.aodPod);
+      if ((effectivePrefill as any)?.cargoType) setCargoType((effectivePrefill as any).cargoType);
+      if (effectivePrefill?.mode) setMode(effectivePrefill.mode as "FCL" | "LCL" | "AIR");
     }
-  }, [prefillData, source]);
+  }, [demoMode, demoPrefill, prefillData, source]);
+
+  useEffect(() => {
+    onDemoFieldChange?.({ eta });
+  }, [eta, onDemoFieldChange]);
 
   const handleProjectAutofill = (project: Project) => {
     setFetchedProject(project);
@@ -289,6 +317,31 @@ export function CreateForwardingBookingPanel({
         bookingData.assigned_handler_name = teamAssignment.handler?.name;
       }
 
+      if (demoMode) {
+        const resolvedBookingId = bookingData.bookingId || `FWD-${Date.now().toString().slice(-6)}`;
+        const createdBooking: ForwardingBooking = {
+          ...(bookingData as ForwardingBooking),
+          bookingId: resolvedBookingId,
+          booking_number: resolvedBookingId,
+          customerName,
+          projectNumber: projectNumber || undefined,
+          movement,
+          mode,
+          portOfLoading: aolPol,
+          portOfDischarge: aodPod,
+          status,
+          eta,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        toast.success(`Forwarding booking ${createdBooking.bookingId} created successfully`);
+        onDemoCreateBooking?.(createdBooking);
+        onBookingCreated(createdBooking);
+        onClose();
+        return;
+      }
+
       const { data: createdBooking, error } = await supabase.from('forwarding_bookings').insert(bookingData).select().single();
 
       if (error) throw new Error(error.message);
@@ -337,8 +390,10 @@ export function CreateForwardingBookingPanel({
 
   if (!isOpen) return null;
 
-  const isFormValid = customerName.trim() !== "" && 
-    (source === "operations" || (source === "pricing" && teamAssignment !== null));
+  const isFormValid = demoMode
+    ? customerName.trim() !== "" && eta.trim() !== ""
+    : customerName.trim() !== "" && 
+      (source === "operations" || (source === "pricing" && teamAssignment !== null));
 
   return (
     <BookingCreationPanel
@@ -353,9 +408,10 @@ export function CreateForwardingBookingPanel({
       isFormValid={isFormValid}
       submitLabel="Create Booking"
       submitIcon={<Ship size={16} />}
+      submitButtonProps={{ "data-demo-target": demoTargetIds?.submit }}
     >
             {/* Project Reference - Autofill Section - Only show when from Operations */}
-            {source === "operations" && (
+            {source === "operations" && !demoMode && (
               <ProjectAutofillSection
                 projectNumber={projectNumber}
                 onProjectNumberChange={setProjectNumber}
@@ -378,9 +434,10 @@ export function CreateForwardingBookingPanel({
                 onChange={(e) => setBookingNumber(e.target.value)}
                 placeholder="Leave blank for auto-generation or enter custom"
                 className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                disabled={demoMode}
                 style={{
                   border: "1px solid var(--neuron-ui-border)",
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: demoMode ? "#F9FAFB" : "#FFFFFF",
                   color: "var(--neuron-ink-primary)",
                 }}
               />
@@ -408,6 +465,7 @@ export function CreateForwardingBookingPanel({
                     value={movement}
                     onChange={setMovement}
                     layoutIdPrefix="forwarding-movement-pill"
+                    disabled={demoMode}
                   />
                 </div>
 
@@ -420,6 +478,7 @@ export function CreateForwardingBookingPanel({
                     options={customerOptions}
                     placeholder="Search customer..."
                     fullWidth
+                    disabled={demoMode}
                   />
                   {/* ✨ CONTRACT: Detection banner */}
                   <ContractDetectionBanner
@@ -1082,9 +1141,10 @@ export function CreateForwardingBookingPanel({
                       onChange={(e) => setAodPod(e.target.value)}
                       placeholder="Airport/Port of Discharge"
                       className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                      disabled={demoMode}
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: demoMode ? "#F9FAFB" : "#FFFFFF",
                         color: "var(--neuron-ink-primary)",
                       }}
                     />
@@ -1234,6 +1294,7 @@ export function CreateForwardingBookingPanel({
                       value={eta}
                       onChange={(e) => setEta(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-lg text-[13px]"
+                      data-demo-target={demoTargetIds?.eta}
                       style={{
                         border: "1px solid var(--neuron-ui-border)",
                         backgroundColor: "#FFFFFF",

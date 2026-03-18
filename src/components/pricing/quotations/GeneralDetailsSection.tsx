@@ -7,6 +7,7 @@ import { ContactPersonAutocomplete } from "../../crm/ContactPersonAutocomplete";
 import { CustomDropdown } from "../../bd/CustomDropdown";
 import { CustomDatePicker } from "../../common/CustomDatePicker";
 import type { QuotationType } from "../../../types/pricing";
+import type { Customer } from "../../../types/bd";
 
 // Helper component for read-only field display
 function DisplayField({ label, value }: { label: string; value: string }) {
@@ -88,6 +89,13 @@ interface GeneralDetailsSectionProps {
 
   // ✨ CONTRACT REFERENCE: Inline contract detection display
   contractDetection?: ContractDetection;
+  demoTargetIds?: {
+    movement?: string;
+    customer?: string;
+    forwardingService?: string;
+  };
+  demoCustomerOptions?: Customer[];
+  onMovementInteract?: () => void;
 }
 
 const AVAILABLE_SERVICES = [
@@ -136,6 +144,9 @@ export function GeneralDetailsSection({
   setContractValidityEnd,
   isEditMode = false,
   contractDetection,
+  demoTargetIds,
+  demoCustomerOptions,
+  onMovementInteract,
 }: GeneralDetailsSectionProps) {
   const [hoveredService, setHoveredService] = useState<string | null>(null);
 
@@ -228,7 +239,9 @@ export function GeneralDetailsSection({
           {viewMode ? (
             <DisplayField label="" value={movement} />
           ) : (
-            <div style={{ 
+            <div
+              data-demo-target={demoTargetIds?.movement}
+              style={{ 
               display: "inline-flex",
               border: "1px solid var(--neuron-ui-border)", 
               borderRadius: "10px",
@@ -240,7 +253,10 @@ export function GeneralDetailsSection({
                 <button
                   key={option}
                   type="button"
-                  onClick={() => setMovement(option)}
+                  onClick={() => {
+                    onMovementInteract?.();
+                    setMovement(option);
+                  }}
                   style={{
                     position: "relative",
                     padding: "6px 16px",
@@ -282,7 +298,7 @@ export function GeneralDetailsSection({
         {viewMode ? (
           <DisplayField label="Customer" value={customerName} />
         ) : (
-          <div>
+          <div data-demo-target={demoTargetIds?.customer}>
             <label style={{
               display: "block",
               fontSize: "13px",
@@ -303,6 +319,9 @@ export function GeneralDetailsSection({
                 setContactPersonId("");
               }}
               placeholder="Select or search customer..."
+              demoOptions={demoCustomerOptions}
+              interactionGroupId={demoTargetIds?.customer}
+              renderMenuInPortal={Boolean(demoCustomerOptions)}
             />
           </div>
         )}
@@ -440,6 +459,7 @@ export function GeneralDetailsSection({
                     onClick={() => handleServiceToggle(service)}
                     onMouseEnter={() => setHoveredService(service)}
                     onMouseLeave={() => setHoveredService(null)}
+                    data-demo-target={service === "Forwarding" ? demoTargetIds?.forwardingService : undefined}
                     style={{
                       padding: "8px 16px",
                       fontSize: "13px",

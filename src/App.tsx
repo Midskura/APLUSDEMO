@@ -37,10 +37,12 @@ import type { Customer } from "./types/bd";
 import logoImage from "figma:asset/28c84ed117b026fbf800de0882eb478561f37f4f.png";
 import { DesignSystemGuide } from "./components/DesignSystemGuide";
 import { projectId } from "./utils/supabase/info";
+import { DemoExperience } from "./components/demo/DemoExperience";
 
 function LoginPage() {
   const { setUser, login, signup } = useUser();
   const { mode, setMode } = useAppMode();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -380,11 +382,11 @@ function LoginPage() {
         {/* App Mode Toggle */}
         <div className="mt-6">
           <p className="text-center text-[#667085] text-xs font-medium mb-2.5">System Mode</p>
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-3 rounded-lg border border-gray-200 overflow-hidden">
             <button
               type="button"
               onClick={() => setMode("essentials")}
-              className="flex-1 py-2 px-3 text-xs font-medium transition-all duration-150"
+              className="py-2 px-3 text-xs font-medium transition-all duration-150"
               style={{
                 backgroundColor: mode === "essentials" ? "#12332B" : "transparent",
                 color: mode === "essentials" ? "#fff" : "#667085",
@@ -395,13 +397,24 @@ function LoginPage() {
             <button
               type="button"
               onClick={() => setMode("full")}
-              className="flex-1 py-2 px-3 text-xs font-medium transition-all duration-150 border-l border-gray-200"
+              className="py-2 px-3 text-xs font-medium transition-all duration-150 border-l border-gray-200"
               style={{
                 backgroundColor: mode === "full" ? "#12332B" : "transparent",
                 color: mode === "full" ? "#fff" : "#667085",
               }}
             >
               Full Suite
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/demo")}
+              className="py-2 px-3 text-xs font-medium transition-all duration-150 border-l border-gray-200"
+              style={{
+                backgroundColor: "transparent",
+                color: "#667085",
+              }}
+            >
+              Demo
             </button>
           </div>
         </div>
@@ -1057,11 +1070,7 @@ function AccountingExpensesPage() {
 }
 
 function AccountingLedgerPage() {
-  return (
-    <RouteWrapper page="acct-ledger">
-      <Accounting view="ledger" />
-    </RouteWrapper>
-  );
+  return <Navigate to="/accounting/customers" replace />;
 }
 
 function AccountingReportsPage() {
@@ -1273,6 +1282,7 @@ function AppContent() {
       <>
         <Toaster position="bottom-right" richColors />
         <Routes>
+          <Route path="/demo" element={<DemoExperience />} />
           <Route path="/supabase-debug" element={<SupabaseDebug />} />
           <Route path="*" element={<LoginPage />} />
         </Routes>
@@ -1377,6 +1387,7 @@ function AppContent() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/design-system" element={<DesignSystemPage />} />
+        <Route path="/demo" element={<DemoExperience />} />
         
         {/* Diagnostics (hidden utility page) */}
         <Route path="/diagnostics" element={<DiagnosticsPage />} />
