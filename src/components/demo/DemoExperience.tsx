@@ -582,7 +582,7 @@ function DemoOverlay({
         const desiredCenter = window.innerHeight * 0.46;
         const nextTop = Math.max(0, window.scrollY + targetCenter - desiredCenter);
         lastAutoScrollRef.current = signature;
-        window.scrollTo({ top: nextTop, behavior: "smooth" });
+        window.scrollTo({ top: nextTop, behavior: "instant" });
         return;
       }
 
@@ -596,7 +596,7 @@ function DemoOverlay({
       const desiredCenter = containerRect.top + container.clientHeight * 0.46;
       const nextTop = Math.max(0, container.scrollTop + targetCenter - desiredCenter);
       lastAutoScrollRef.current = signature;
-      container.scrollTo({ top: nextTop, behavior: "smooth" });
+      container.scrollTo({ top: nextTop, behavior: "instant" });
     });
 
     return () => cancelAnimationFrame(frame);
@@ -651,26 +651,26 @@ function DemoOverlay({
   return (
     <>
       {createPortal(
-        <div data-demo-overlay-root="true" className="pointer-events-none fixed inset-0 z-[2147483640]">
+        <>
           {highlightRect ? (
             <>
-              <div className="fixed z-[2147483640] left-0 top-0" style={{ width: "100vw", height: Math.max(0, highlightRect.top - 10), backgroundColor: "rgba(248, 250, 252, 0.38)" }} />
-              <div className="fixed z-[2147483640] left-0" style={{ top: Math.max(0, highlightRect.top - 10), width: Math.max(0, highlightRect.left - 10), height: highlightRect.height + 20, backgroundColor: "rgba(248, 250, 252, 0.38)" }} />
-              <div className="fixed z-[2147483640] right-0" style={{ top: Math.max(0, highlightRect.top - 10), width: Math.max(0, window.innerWidth - highlightRect.right - 10), height: highlightRect.height + 20, backgroundColor: "rgba(248, 250, 252, 0.38)" }} />
-              <div className="fixed z-[2147483640] left-0 bottom-0" style={{ width: "100vw", top: highlightRect.bottom + 10, backgroundColor: "rgba(248, 250, 252, 0.38)" }} />
+              <div data-demo-overlay-root="true" style={{ position: "fixed", zIndex: 2147483645, left: 0, top: 0, width: "100vw", height: Math.max(0, highlightRect.top - 10), backgroundColor: "rgba(18, 51, 43, 0.55)", pointerEvents: "none" }} />
+              <div data-demo-overlay-root="true" style={{ position: "fixed", zIndex: 2147483645, left: 0, top: Math.max(0, highlightRect.top - 10), width: Math.max(0, highlightRect.left - 10), height: highlightRect.height + 20, backgroundColor: "rgba(18, 51, 43, 0.55)", pointerEvents: "none" }} />
+              <div data-demo-overlay-root="true" style={{ position: "fixed", zIndex: 2147483645, right: 0, top: Math.max(0, highlightRect.top - 10), width: Math.max(0, window.innerWidth - highlightRect.right - 10), height: highlightRect.height + 20, backgroundColor: "rgba(18, 51, 43, 0.55)", pointerEvents: "none" }} />
+              <div data-demo-overlay-root="true" style={{ position: "fixed", zIndex: 2147483645, left: 0, bottom: 0, width: "100vw", top: highlightRect.bottom + 10, backgroundColor: "rgba(18, 51, 43, 0.55)", pointerEvents: "none" }} />
               <div
-                className="fixed z-[2147483640] rounded-[18px] border-2 border-[#5FC4A1]"
-                style={{ top: highlightRect.top - 6, left: highlightRect.left - 6, width: highlightRect.width + 12, height: highlightRect.height + 12, backgroundColor: "rgba(255,255,255,0.18)", boxShadow: "0 0 0 1px rgba(255,255,255,0.92), 0 18px 42px rgba(15,118,110,0.16)" }}
+                data-demo-overlay-root="true"
+                style={{ position: "fixed", zIndex: 2147483645, top: highlightRect.top - 6, left: highlightRect.left - 6, width: highlightRect.width + 12, height: highlightRect.height + 12, borderRadius: "18px", border: "3px solid #0F766E", backgroundColor: "rgba(15,118,110,0.06)", boxShadow: "0 0 0 3px rgba(15,118,110,0.25), 0 0 16px 4px rgba(15,118,110,0.30), 0 0 40px 10px rgba(15,118,110,0.18)", pointerEvents: "none" }}
               />
             </>
           ) : (
-            <div className="fixed z-[2147483640] inset-0 flex items-center justify-center px-6" style={{ backgroundColor: "rgba(248, 250, 252, 0.42)" }}>
-              <div data-demo-overlay-card="true" className="rounded-2xl border bg-white px-6 py-5 text-[14px] text-[#667085] shadow-2xl" style={{ borderColor: "#D9E3E0" }}>
+            <div data-demo-overlay-root="true" style={{ position: "fixed", zIndex: 2147483645, inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px", backgroundColor: "rgba(248, 250, 252, 0.42)", pointerEvents: "none" }}>
+              <div data-demo-overlay-card="true" className="rounded-2xl border bg-white px-6 py-5 text-[14px] text-[#667085] shadow-2xl" style={{ borderColor: "#D9E3E0", pointerEvents: "auto" }}>
                 Preparing the next step...
               </div>
             </div>
           )}
-        </div>,
+        </>,
         document.body,
       )}
       {highlightRect && createPortal(
